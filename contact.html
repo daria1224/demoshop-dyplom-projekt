@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Kontakt z DemoShop.">
+    <title>Kontakt — DemoShop</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/cart.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container header-content">
+        <a class="logo" href="index.html" aria-label="DemoShop — strona główna">Demo<span>Shop</span></a><button class="menu-toggle" type="button" aria-label="Otwórz menu" aria-expanded="false">☰</button>
+        <nav class="main-nav" aria-label="Główna nawigacja">
+          <a href="index.html">Start</a><a href="products.html">Produkty</a><a href="about.html">O nas</a><a class="active" href="contact.html">Kontakt</a>
+        </nav>
+        <a class="cart-link" href="cart.html" aria-label="Przejdź do koszyka">Koszyk <span class="cart-count">0</span></a>
+      </div>
+    </header>
+    <main>
+      <section class="page-intro">
+        <div class="container">
+          <p class="eyebrow">
+            Kontakt
+          </p>
+          <h1>
+            Porozmawiajmy.
+          </h1>
+          <p>
+            Masz pytanie lub chcesz zostawić opinię? Napisz do nas.
+          </p>
+        </div>
+      </section>
+      <section class="container contact-layout section">
+        <aside>
+          <h2>
+            Jesteśmy tu dla Ciebie
+          </h2>
+          <p>
+            Ten formularz jest elementem demonstracyjnym. Po wysłaniu wyświetli się komunikat, ale wiadomość nie zostanie przekazana.
+          </p>
+          <a class="contact-mail" href="mailto:hello@demoshop.pl">hello@demoshop.pl</a>
+        </aside>
+        <form class="contact-form" novalidate>
+          <label for="name">Imię</label><input id="name" name="name" type="text" autocomplete="name" required><label for="email">Adres e-mail</label><input id="email" name="email" type="email" autocomplete="email" required><label for="message">Wiadomość</label><textarea id="message" name="message" rows="5" required></textarea><button class="button" type="submit">Wyślij wiadomość</button>
+          <p class="form-status" role="status" aria-live="polite">
+          </p>
+        </form>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="container footer-content">
+        <a class="logo" href="index.html">Demo<span>Shop</span></a>
+        <p>
+          Fikcyjny sklep demonstracyjny · 2026
+        </p>
+        <a href="contact.html">Napisz do nas</a>
+      </div>
+    </footer>
+    <script src="js/products.js">
+    </script>
+    <script src="js/main.js">
+    </script>
+  </body>
+</html>
