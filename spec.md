@@ -16,7 +16,8 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - API odbierające i walidujące zdarzenia;
 - zapis w relacyjnej bazie danych;
 - agregacje zdarzeń, produktów, aktywności dziennej i odsłon stron;
-- opcjonalne filtry dat dla aktywności i popularności stron.
+- statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
+- opcjonalne filtry dat dla zestawień analitycznych.
 
 ### Funkcjonalności planowane w ramach pracy dyplomowej
 
@@ -154,10 +155,14 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 | `GET` | `/api/analytics/pages` | istnieje | liczba zdarzeń `page_view` według strony |
 | `GET` | `/api/analytics/sessions` | istnieje | zbiorcze statystyki sesji i czasu aktywności |
 | `GET` | `/api/analytics/clicks` | istnieje | ranking kliknięć według elementu, strony i celu |
+| `GET` | `/api/analytics/recent-events` | istnieje | najnowsze zdarzenia z kontrolowanym zestawem pól |
+| `GET` | `/api/analytics/funnel` | istnieje | lejek wyświetlenie produktu → dodanie do koszyka |
 
 `activity` i `pages` przyjmują opcjonalne `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do UTC. Odwrócony zakres jest odrzucany kodem 422. `activity` uzupełnia dni z wartością zero tylko wtedy, gdy określono obie granice.
 
 `sessions` i `clicks` przyjmują takie same opcjonalne, włączne granice dni UTC. W `sessions` zakres wybiera zdarzenia, a nie całe historyczne sesje: uwzględniane są sesje z co najmniej jednym zdarzeniem w okresie, natomiast ich liczba zdarzeń i czas aktywności są obliczane wyłącznie z danych należących do okresu.
+
+`recent-events` i `funnel` przyjmują opcjonalne `date_from` i `date_to` o tej samej semantyce. `recent-events` obsługuje dodatkowo całkowity parametr `limit` od `1` do `100`, domyślnie `20`. Nieprawidłowy limit, format daty albo zakres z `date_from` późniejszym niż `date_to` jest odrzucany kodem 422.
 
 ## 9. Zasady obliczania wskaźników
 
@@ -199,15 +204,46 @@ Endpoint `/api/analytics/clicks` uwzględnia wyłącznie zdarzenia typu `click`.
 
 Liczba kliknięć jest obliczana osobno dla każdej kombinacji elementu, strony i celu. Wyniki są sortowane malejąco według liczby kliknięć, a przy remisie stabilnie według elementu, strony i celu. Brakujące metadane nie powodują pominięcia zdarzenia. Ranking nie zawiera danych osobowych, ale jego interpretacja zależy od spójności identyfikatorów elementów przekazywanych przez frontend.
 
+### 9.3. Historia ostatnich zdarzeń
+
+Endpoint `/api/analytics/recent-events` łączy `events` z `pages` i `event_types`. Rekordy są sortowane malejąco według `events.created_at`, a przy identycznym czasie malejąco według `events.id`. Czas jest zwracany w formacie ISO 8601 UTC z oznaczeniem `Z`.
+
+Odpowiedź zawiera wyłącznie bezpieczną listę pól potrzebnych do przyszłej tabeli analitycznej:
+
+- `event_id` — techniczny identyfikator zdarzenia;
+- `timestamp` — czas zdarzenia w UTC;
+- `event_type` — nazwa typu zdarzenia;
+- `page` — ścieżka strony;
+- `element` — opcjonalna nazwa elementu z `element_name` albo `metadata.element`;
+- `product_id` i `product_name` — opcjonalne dane produktu.
+
+Endpoint nie zwraca `session_token`, całego `metadata`, danych formularza ani innych dodatkowych wartości przesłanych przez klienta. Filtry dat obejmują włączne dni UTC. Pusty zakres danych zwraca pustą tablicę.
+
+### 9.4. Lejek interakcji z produktami
+
+Endpoint `/api/analytics/funnel` wykorzystuje zdarzenia `view_item` i `add_to_cart`, które mają niepusty `metadata.product_id`. Jednostką analizy jest unikalna para `(session_id, product_id)`, a nie użytkownik ani pojedyncze zdarzenie.
+
+- para wchodzi do pierwszego etapu, jeżeli ma co najmniej jedno `view_item`;
+- para przechodzi do drugiego etapu, jeżeli po dowolnym jej `view_item` wystąpi `add_to_cart` tego samego produktu w tej samej sesji;
+- wielokrotne odsłony i dodania nie zwiększają liczby tej samej pary;
+- `add_to_cart` bez wcześniejszego `view_item` nie jest konwersją;
+- wyświetlenie jednego produktu i dodanie innego nie jest konwersją.
+
+Chronologia jest porównywana jako para `(events.created_at, events.id)`. Wcześniejszy czas ma pierwszeństwo, a przy identycznych znacznikach czasu zdarzenie z większym `id` jest uznawane za późniejsze. Reguła dla remisu jest deterministyczna, ale nie dowodzi rzeczywistej kolejności dwóch działań wykonanych w tej samej chwili.
+
+Wynik globalny i wyniki produktów zawierają liczbę wyświetlonych par, liczbę par skonwertowanych oraz procent `converted_session_product_pairs / viewed_session_product_pairs * 100`, zaokrąglony do dwóch miejsc. Dla zerowego mianownika zwracane jest `0.0`.
+
+Jeżeli zastosowano daty, zarówno `view_item`, jak i późniejsze `add_to_cart` muszą mieścić się we włącznym zakresie dni UTC. Konwersje przekraczające granicę filtra nie są uwzględniane, dlatego wynik ograniczonego okresu nie jest pełną historyczną konwersją sesji. Współczynnik opisuje przejście między dwoma zdarzeniami DemoShop; nie jest współczynnikiem rzeczywistych zakupów ani konwersją unikalnych użytkowników.
+
 ## 10. Planowane analizy i wizualizacje
 
 - karty podstawowych statystyk;
 - wykres aktywności dziennej;
 - wykres udziału typów zdarzeń;
 - ranking podstron i produktów;
-- tabela ostatnich zdarzeń;
+- tabela ostatnich zdarzeń na podstawie istniejącego endpointu;
 - wizualizacja czasu aktywności sesji i jego rozkładu;
-- współczynnik przejścia od wyświetlenia produktu do dodania do koszyka;
+- wizualizacja istniejącego współczynnika przejścia od wyświetlenia produktu do dodania do koszyka;
 - filtry według dat, strony, typu zdarzenia i produktu.
 
 ## 11. Autoryzacja właściciela

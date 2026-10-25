@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -12,6 +12,8 @@ from backend.database import (
     get_events_by_type,
     get_page_analytics,
     get_product_analytics,
+    get_product_funnel,
+    get_recent_events,
     get_session_analytics,
     save_event,
 )
@@ -174,6 +176,60 @@ def get_analytics_clicks(
         raise HTTPException(
             status_code=500,
             detail="Nie udało się pobrać analityki kliknięć.",
+        )
+
+
+@app.get(
+    "/api/analytics/recent-events",
+    summary="Historia ostatnich zdarzeń",
+    description=(
+        "Zwraca najnowsze zdarzenia z bezpiecznym podzbiorem pól. "
+        "Filtry date_from i date_to są włącznymi granicami dni UTC."
+    ),
+)
+def get_analytics_recent_events(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    validate_date_range(date_from, date_to)
+
+    try:
+        return get_recent_events(
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Nie udało się pobrać historii zdarzeń.",
+        )
+
+
+@app.get(
+    "/api/analytics/funnel",
+    summary="Lejek interakcji z produktami",
+    description=(
+        "Jednostką analizy jest para sesja-produkt. Konwersja oznacza "
+        "zdarzenie add_to_cart występujące po view_item tego samego produktu "
+        "w tej samej sesji. Przy remisie czasu kolejność wyznacza identyfikator "
+        "zdarzenia. Filtry dat obejmują włączne dni UTC i oba zdarzenia muszą "
+        "należeć do wybranego zakresu."
+    ),
+)
+def get_analytics_funnel(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
+    try:
+        return get_product_funnel(date_from=date_from, date_to=date_to)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Nie udało się pobrać lejka produktów.",
         )
 
 

@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -471,5 +471,187 @@ def get_click_analytics(
             }
             for row in rows
         ]
+    finally:
+        connection.close()
+
+
+def _format_utc_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def get_recent_events(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    connection = _open_database_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            date_filter, date_parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
+            cursor.execute(
+                f"""
+                SELECT
+                    e.id,
+                    e.created_at,
+                    et.name AS event_type,
+                    p.url AS page,
+                    COALESCE(
+                        NULLIF(e.element_name, ''),
+                        NULLIF(e.metadata ->> 'element', '')
+                    ) AS element,
+                    NULLIF(e.metadata ->> 'product_id', '') AS product_id,
+                    NULLIF(e.metadata ->> 'product_name', '') AS product_name
+                FROM events e
+                JOIN pages p ON p.id = e.page_id
+                JOIN event_types et ON et.id = e.event_type_id
+                {date_filter}
+                ORDER BY e.created_at DESC, e.id DESC
+                LIMIT %s
+                """,
+                [*date_parameters, limit],
+            )
+            rows = cursor.fetchall()
+
+        return [
+            {
+                "event_id": row[0],
+                "timestamp": _format_utc_timestamp(row[1]),
+                "event_type": row[2],
+                "page": row[3],
+                "element": row[4],
+                "product_id": row[5],
+                "product_name": row[6],
+            }
+            for row in rows
+        ]
+    finally:
+        connection.close()
+
+
+def get_product_funnel(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, object]:
+    connection = _open_database_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            date_filter, date_parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
+            date_conditions = date_filter.removeprefix("WHERE ")
+            additional_filter = (
+                f" AND {date_conditions}" if date_conditions else ""
+            )
+            cursor.execute(
+                f"""
+                WITH filtered_events AS (
+                    SELECT
+                        e.id,
+                        e.session_id,
+                        e.created_at,
+                        et.name AS event_type,
+                        e.metadata ->> 'product_id' AS product_id,
+                        NULLIF(e.metadata ->> 'product_name', '') AS product_name
+                    FROM events e
+                    JOIN event_types et ON et.id = e.event_type_id
+                    WHERE et.name IN (%s, %s)
+                        AND NULLIF(e.metadata ->> 'product_id', '') IS NOT NULL
+                        {additional_filter}
+                ),
+                viewed_pairs AS (
+                    SELECT
+                        view_event.session_id,
+                        view_event.product_id,
+                        MAX(view_event.product_name) AS product_name,
+                        BOOL_OR(
+                            EXISTS (
+                                SELECT 1
+                                FROM filtered_events add_event
+                                WHERE add_event.session_id = view_event.session_id
+                                    AND add_event.product_id = view_event.product_id
+                                    AND add_event.event_type = %s
+                                    AND (
+                                        add_event.created_at,
+                                        add_event.id
+                                    ) > (
+                                        view_event.created_at,
+                                        view_event.id
+                                    )
+                            )
+                        ) AS converted
+                    FROM filtered_events view_event
+                    WHERE view_event.event_type = %s
+                    GROUP BY view_event.session_id, view_event.product_id
+                ),
+                product_metrics AS (
+                    SELECT
+                        product_id,
+                        MAX(product_name) AS product_name,
+                        COUNT(*) AS viewed_pairs,
+                        COUNT(*) FILTER (WHERE converted) AS converted_pairs
+                    FROM viewed_pairs
+                    GROUP BY product_id
+                )
+                SELECT
+                    product_id,
+                    product_name,
+                    viewed_pairs,
+                    converted_pairs
+                FROM product_metrics
+                ORDER BY viewed_pairs DESC, product_id
+                """,
+                [
+                    "view_item",
+                    "add_to_cart",
+                    *date_parameters,
+                    "add_to_cart",
+                    "view_item",
+                ],
+            )
+            rows = cursor.fetchall()
+
+        products = []
+        total_viewed = 0
+        total_converted = 0
+
+        for row in rows:
+            viewed_pairs = int(row[2])
+            converted_pairs = int(row[3])
+            total_viewed += viewed_pairs
+            total_converted += converted_pairs
+            products.append(
+                {
+                    "product_id": row[0],
+                    "product_name": row[1],
+                    "viewed_session_product_pairs": viewed_pairs,
+                    "converted_session_product_pairs": converted_pairs,
+                    "conversion_rate_percent": round(
+                        converted_pairs / viewed_pairs * 100,
+                        2,
+                    ),
+                }
+            )
+
+        conversion_rate = (
+            round(total_converted / total_viewed * 100, 2)
+            if total_viewed
+            else 0.0
+        )
+
+        return {
+            "viewed_session_product_pairs": total_viewed,
+            "converted_session_product_pairs": total_converted,
+            "conversion_rate_percent": conversion_rate,
+            "products": products,
+        }
     finally:
         connection.close()

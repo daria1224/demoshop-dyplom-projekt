@@ -126,10 +126,16 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 | `GET` | `/api/analytics/pages` | Liczba odsłon stron na podstawie `page_view` |
 | `GET` | `/api/analytics/sessions` | Liczba sesji oraz statystyki zarejestrowanej aktywności |
 | `GET` | `/api/analytics/clicks` | Ranking klikanych elementów według strony i celu |
+| `GET` | `/api/analytics/recent-events` | Historia najnowszych zdarzeń z bezpiecznym zestawem pól |
+| `GET` | `/api/analytics/funnel` | Lejek wyświetlenie produktu → dodanie do koszyka |
 
 Endpointy `/api/analytics/activity` i `/api/analytics/pages` przyjmują opcjonalne parametry `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do dni w UTC. Pełny przedział w `/activity` zawiera także dni bez zdarzeń, z wartością `0`.
 
 Endpointy `/api/analytics/sessions` i `/api/analytics/clicks` obsługują te same opcjonalne granice dni UTC. W analityce sesji filtr wybiera zdarzenia z okresu, a statystyki każdej sesji są liczone wyłącznie na podstawie zdarzeń znajdujących się w tym okresie.
+
+Endpointy `/api/analytics/recent-events` i `/api/analytics/funnel` również przyjmują opcjonalne `date_from` i `date_to` jako włączne granice dni UTC. Historia zdarzeń obsługuje dodatkowo parametr `limit`: domyślnie `20`, minimum `1`, maksimum `100`. Zwraca identyfikator i czas zdarzenia, typ, stronę oraz opcjonalnie element, identyfikator produktu i jego nazwę. Nie zwraca tokenu sesji ani całego pola `metadata`.
+
+Lejek analizuje unikalne pary `(session_id, product_id)`. Para jest liczona jako wyświetlona po wystąpieniu `view_item`, a jako skonwertowana, gdy później w tej samej sesji wystąpi `add_to_cart` tego samego produktu. Kolejność wynika z `created_at`, a przy równych znacznikach czasu z `events.id`. Oba zdarzenia muszą należeć do wybranego zakresu dat, dlatego wynik dla wąskiego okresu nie przedstawia pełnej historycznej konwersji sesji. Wskaźnik nie oznacza rzeczywistych zakupów ani konwersji unikalnych użytkowników.
 
 Endpointy analityczne nie są jeszcze chronione autoryzacją i nie powinny być publicznie udostępniane w obecnym stanie.
 
@@ -151,7 +157,9 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - podstawowe agregacje analityczne;
 - filtrowanie aktywności i popularności stron według dat;
 - statystyki sesji: liczba sesji, średnia i mediana czasu aktywności, sesje z jednym zdarzeniem oraz średnia liczba zdarzeń;
-- ranking kliknięć grupowany według elementu, strony i opcjonalnego celu.
+- ranking kliknięć grupowany według elementu, strony i opcjonalnego celu;
+- historia ostatnich zdarzeń z kontrolowaną listą zwracanych pól;
+- lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt.
 
 ## Planowany rozwój
 
@@ -160,7 +168,6 @@ Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 - osobny Dashboard analityczny;
 - autoryzacja właściciela i ochrona wszystkich endpointów analitycznych;
 - wykresy aktywności, popularności stron i produktów;
-- tabela ostatnich zdarzeń;
 - dalsze wskaźniki oraz wizualizacje dotyczące sesji;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
 - bezpieczna konfiguracja CORS dla docelowych adresów;
