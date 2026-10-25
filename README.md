@@ -124,8 +124,12 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 | `GET` | `/api/analytics/products` | Wyświetlenia produktów i dodania do koszyka |
 | `GET` | `/api/analytics/activity` | Liczba wszystkich zdarzeń według dnia UTC |
 | `GET` | `/api/analytics/pages` | Liczba odsłon stron na podstawie `page_view` |
+| `GET` | `/api/analytics/sessions` | Liczba sesji oraz statystyki zarejestrowanej aktywności |
+| `GET` | `/api/analytics/clicks` | Ranking klikanych elementów według strony i celu |
 
 Endpointy `/api/analytics/activity` i `/api/analytics/pages` przyjmują opcjonalne parametry `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do dni w UTC. Pełny przedział w `/activity` zawiera także dni bez zdarzeń, z wartością `0`.
+
+Endpointy `/api/analytics/sessions` i `/api/analytics/clicks` obsługują te same opcjonalne granice dni UTC. W analityce sesji filtr wybiera zdarzenia z okresu, a statystyki każdej sesji są liczone wyłącznie na podstawie zdarzeń znajdujących się w tym okresie.
 
 Endpointy analityczne nie są jeszcze chronione autoryzacją i nie powinny być publicznie udostępniane w obecnym stanie.
 
@@ -145,7 +149,9 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - walidacja znaczników czasu i normalizacja do UTC;
 - zapis sesji, stron, typów zdarzeń i metadanych w PostgreSQL;
 - podstawowe agregacje analityczne;
-- filtrowanie aktywności i popularności stron według dat.
+- filtrowanie aktywności i popularności stron według dat;
+- statystyki sesji: liczba sesji, średnia i mediana czasu aktywności, sesje z jednym zdarzeniem oraz średnia liczba zdarzeń;
+- ranking kliknięć grupowany według elementu, strony i opcjonalnego celu.
 
 ## Planowany rozwój
 
@@ -155,7 +161,7 @@ Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 - autoryzacja właściciela i ochrona wszystkich endpointów analitycznych;
 - wykresy aktywności, popularności stron i produktów;
 - tabela ostatnich zdarzeń;
-- analiza czasu trwania sesji i dodatkowe wskaźniki;
+- dalsze wskaźniki oraz wizualizacje dotyczące sesji;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
 - bezpieczna konfiguracja CORS dla docelowych adresów;
 - wdrożenie backendu i frontendu w środowisku chmurowym.

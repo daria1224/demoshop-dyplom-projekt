@@ -360,3 +360,116 @@ def get_page_analytics(
         ]
     finally:
         connection.close()
+
+
+def get_session_analytics(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, int | float]:
+    connection = _open_database_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            date_filter, parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
+            cursor.execute(
+                f"""
+                WITH session_metrics AS (
+                    SELECT
+                        s.id AS session_id,
+                        COUNT(e.id) AS event_count,
+                        EXTRACT(
+                            EPOCH FROM (MAX(e.created_at) - MIN(e.created_at))
+                        ) AS activity_duration_seconds
+                    FROM sessions s
+                    JOIN events e ON e.session_id = s.id
+                    {date_filter}
+                    GROUP BY s.id
+                )
+                SELECT
+                    COUNT(*) AS session_count,
+                    AVG(activity_duration_seconds) AS average_duration,
+                    COUNT(*) FILTER (
+                        WHERE event_count = 1
+                    ) AS single_event_session_count,
+                    AVG(event_count) AS average_events,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (
+                        ORDER BY activity_duration_seconds
+                    ) AS median_duration
+                FROM session_metrics
+                """,
+                parameters,
+            )
+            row = cursor.fetchone()
+
+        return {
+            "session_count": int(row[0]),
+            "average_activity_duration_seconds": round(float(row[1] or 0), 2),
+            "single_event_session_count": int(row[2]),
+            "average_events_per_session": round(float(row[3] or 0), 2),
+            "median_activity_duration_seconds": round(float(row[4] or 0), 2),
+        }
+    finally:
+        connection.close()
+
+
+def get_click_analytics(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict[str, object]]:
+    connection = _open_database_connection()
+
+    try:
+        with connection.cursor() as cursor:
+            date_filter, date_parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
+            date_conditions = date_filter.removeprefix("WHERE ")
+            additional_filter = (
+                f" AND {date_conditions}" if date_conditions else ""
+            )
+
+            cursor.execute(
+                f"""
+                SELECT
+                    COALESCE(
+                        NULLIF(e.element_name, ''),
+                        NULLIF(e.metadata ->> 'element', ''),
+                        'unknown'
+                    ) AS element,
+                    p.url AS page,
+                    COALESCE(
+                        NULLIF(e.metadata ->> 'product_id', ''),
+                        NULLIF(e.metadata ->> 'destination', '')
+                    ) AS target,
+                    COUNT(*) AS click_count
+                FROM events e
+                JOIN pages p ON p.id = e.page_id
+                JOIN event_types et ON et.id = e.event_type_id
+                WHERE et.name = %s
+                    {additional_filter}
+                GROUP BY element, p.url, target
+                ORDER BY
+                    click_count DESC,
+                    element,
+                    p.url,
+                    target NULLS LAST
+                """,
+                ["click", *date_parameters],
+            )
+            rows = cursor.fetchall()
+
+        return [
+            {
+                "element": row[0],
+                "page": row[1],
+                "target": row[2],
+                "click_count": row[3],
+            }
+            for row in rows
+        ]
+    finally:
+        connection.close()

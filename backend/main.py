@@ -8,9 +8,11 @@ from backend.database import (
     check_database_connection,
     get_activity_by_day,
     get_analytics_summary,
+    get_click_analytics,
     get_events_by_type,
     get_page_analytics,
     get_product_analytics,
+    get_session_analytics,
     save_event,
 )
 
@@ -123,6 +125,55 @@ def get_analytics_pages(
         raise HTTPException(
             status_code=500,
             detail="Nie udało się pobrać popularności stron.",
+        )
+
+
+@app.get(
+    "/api/analytics/sessions",
+    summary="Statystyki sesji",
+    description=(
+        "Filtry date_from i date_to wybierają zdarzenia z włącznego zakresu "
+        "dni UTC. Wynik obejmuje sesje mające co najmniej jedno zdarzenie "
+        "w tym zakresie, a czas aktywności i liczba zdarzeń są liczone "
+        "wyłącznie na podstawie zdarzeń należących do zakresu."
+    ),
+)
+def get_analytics_sessions(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
+    try:
+        return get_session_analytics(date_from=date_from, date_to=date_to)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Nie udało się pobrać analityki sesji.",
+        )
+
+
+@app.get(
+    "/api/analytics/clicks",
+    summary="Ranking klikanych elementów",
+    description=(
+        "Zwraca wyłącznie zdarzenia click, pogrupowane według elementu, "
+        "opcjonalnego celu i strony. Filtry date_from i date_to są "
+        "włącznymi granicami dni UTC."
+    ),
+)
+def get_analytics_clicks(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
+    try:
+        return get_click_analytics(date_from=date_from, date_to=date_to)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Nie udało się pobrać analityki kliknięć.",
         )
 
 

@@ -152,8 +152,12 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 | `GET` | `/api/analytics/products` | istnieje | widoki i dodania produktów |
 | `GET` | `/api/analytics/activity` | istnieje | liczba wszystkich zdarzeń według dnia UTC |
 | `GET` | `/api/analytics/pages` | istnieje | liczba zdarzeń `page_view` według strony |
+| `GET` | `/api/analytics/sessions` | istnieje | zbiorcze statystyki sesji i czasu aktywności |
+| `GET` | `/api/analytics/clicks` | istnieje | ranking kliknięć według elementu, strony i celu |
 
 `activity` i `pages` przyjmują opcjonalne `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do UTC. Odwrócony zakres jest odrzucany kodem 422. `activity` uzupełnia dni z wartością zero tylko wtedy, gdy określono obie granice.
+
+`sessions` i `clicks` przyjmują takie same opcjonalne, włączne granice dni UTC. W `sessions` zakres wybiera zdarzenia, a nie całe historyczne sesje: uwzględniane są sesje z co najmniej jednym zdarzeniem w okresie, natomiast ich liczba zdarzeń i czas aktywności są obliczane wyłącznie z danych należących do okresu.
 
 ## 9. Zasady obliczania wskaźników
 
@@ -167,7 +171,33 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 - popularność produktu: liczby `view_item` i `add_to_cart` według pól produktu w JSONB;
 - aktywność dzienna: wszystkie zdarzenia pogrupowane według dnia UTC;
 - popularność stron: wyłącznie `page_view` pogrupowane według `pages.url`;
-- długość aktywności sesji może zostać obliczona jako `last_seen_at - started_at`, ale jest to jedynie przybliżony czas zarejestrowanej aktywności, a nie dokładny czas przebywania użytkownika na stronie; nie ma jeszcze osobnego endpointu tego wskaźnika.
+- ranking kliknięć: wyłącznie zdarzenia `click`, pogrupowane według elementu, strony i opcjonalnego celu.
+
+### 9.1. Analityka sesji
+
+Endpoint `/api/analytics/sessions` najpierw agreguje zdarzenia osobno dla każdej sesji, a dopiero później oblicza wartości zbiorcze. Zapobiega to mnożeniu rekordów podczas łączenia tabel.
+
+- liczba sesji oznacza liczbę różnych sesji, w których zarejestrowano co najmniej jedno zdarzenie; nie jest to liczba unikalnych użytkowników;
+- czas zarejestrowanej aktywności jednej sesji to różnica w sekundach między `MAX(events.created_at)` i `MIN(events.created_at)`;
+- sesja zawierająca jedno zdarzenie ma czas aktywności równy `0` sekund;
+- średni czas aktywności to średnia arytmetyczna czasów wszystkich uwzględnionych sesji, łącznie z sesjami o czasie `0`;
+- mediana czasu aktywności jest obliczana przez PostgreSQL jako `PERCENTILE_CONT(0.5)` dla czasów sesji;
+- liczba sesji z jednym zdarzeniem obejmuje sesje, dla których `COUNT(events.id) = 1`;
+- średnia liczba zdarzeń na sesję to średnia z liczby zdarzeń obliczonej osobno dla każdej uwzględnionej sesji.
+
+Przy aktywnych filtrach dat do obliczeń trafiają wyłącznie zdarzenia z włącznego zakresu dni UTC. Sesja może więc mieć wcześniejsze lub późniejsze zdarzenia poza zakresem, ale nie wpływają one na wynik. Granice aktywności są wyznaczane z tabeli `events`, a nie z historycznych wartości `sessions.started_at` i `sessions.last_seen_at`.
+
+Czas aktywności jest przybliżeniem odstępu między pierwszym i ostatnim zarejestrowanym zdarzeniem. Nie określa dokładnego czasu obecności użytkownika na stronie, nie obejmuje okresu po ostatnim zdarzeniu i zależy od poprawności czasu przesłanego przez klienta.
+
+### 9.2. Analityka kliknięć
+
+Endpoint `/api/analytics/clicks` uwzględnia wyłącznie zdarzenia typu `click`. Każda grupa jest określona przez:
+
+- `element`: kolejno `events.element_name`, `metadata.element` albo wartość `unknown`;
+- `page`: adres z `pages.url`;
+- `target`: kolejno `metadata.product_id`, `metadata.destination` albo `null`.
+
+Liczba kliknięć jest obliczana osobno dla każdej kombinacji elementu, strony i celu. Wyniki są sortowane malejąco według liczby kliknięć, a przy remisie stabilnie według elementu, strony i celu. Brakujące metadane nie powodują pominięcia zdarzenia. Ranking nie zawiera danych osobowych, ale jego interpretacja zależy od spójności identyfikatorów elementów przekazywanych przez frontend.
 
 ## 10. Planowane analizy i wizualizacje
 
@@ -176,7 +206,7 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 - wykres udziału typów zdarzeń;
 - ranking podstron i produktów;
 - tabela ostatnich zdarzeń;
-- czas trwania sesji i jego rozkład;
+- wizualizacja czasu aktywności sesji i jego rozkładu;
 - współczynnik przejścia od wyświetlenia produktu do dodania do koszyka;
 - filtry według dat, strony, typu zdarzenia i produktu.
 
