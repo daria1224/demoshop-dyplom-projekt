@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Przegląd — DemoShop Analytics</title>
+    <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+    <script src="/dashboard/assets/dashboard.js" defer></script>
+  </head>
+  <body data-page="dashboard">
+    <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="icon-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+      <symbol id="icon-sessions" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="icon-pages" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h1M11 6.5h1M8 13h8M8 16h5"/></symbol>
+      <symbol id="icon-products" viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v9M7.5 5.5l9 5"/></symbol>
+      <symbol id="icon-events" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+      <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    </svg>
+
+    <div id="session-gate" class="session-gate" role="status" aria-live="polite">
+      <span id="session-spinner" class="spinner" aria-hidden="true"></span>
+      <h1>DemoShop Analytics</h1>
+      <p id="session-message">Sprawdzanie sesji właściciela…</p>
+      <button id="session-retry" class="button button-primary" type="button" hidden>Spróbuj ponownie</button>
+      <noscript><p>Włącz JavaScript, aby otworzyć panel.</p></noscript>
+    </div>
+
+    <div id="dashboard-shell" class="dashboard-layout" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/dashboard">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>DemoShop<span class="brand-subtitle">ANALYTICS</span></span>
+        </a>
+        <p class="nav-label">PRZESTRZEŃ ANALITYCZNA</p>
+        <nav class="dashboard-nav" aria-label="Sekcje panelu">
+          <a href="#overview" data-section="overview" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-overview"/></svg>Przegląd</a>
+          <a href="#sessions" data-section="sessions"><svg class="icon" aria-hidden="true"><use href="#icon-sessions"/></svg>Sesje</a>
+          <a href="#pages" data-section="pages"><svg class="icon" aria-hidden="true"><use href="#icon-pages"/></svg>Strony i interakcje</a>
+          <a href="#products" data-section="products"><svg class="icon" aria-hidden="true"><use href="#icon-products"/></svg>Produkty</a>
+          <a href="#events" data-section="events"><svg class="icon" aria-hidden="true"><use href="#icon-events"/></svg>Zdarzenia</a>
+        </nav>
+        <div class="sidebar-note"><span class="small-dot" aria-hidden="true"></span>Panel właściciela<p>Przestrzeń analizy DemoShop.</p></div>
+        <div class="sidebar-profile"><span class="avatar" aria-hidden="true">W</span><div>Właściciel<span>Dostęp do analityki</span></div></div>
+      </aside>
+
+      <div class="dashboard-main">
+        <header class="topbar">
+          <p>Panel właściciela <span aria-hidden="true">/</span> <strong id="current-section">Przegląd</strong></p>
+          <button id="logout-button" class="button button-secondary" type="button">Wyloguj się <span aria-hidden="true">↗</span></button>
+        </header>
+        <main id="main-content" class="main-content">
+          <p id="dashboard-status" class="status-message error" role="status" aria-live="polite" hidden></p>
+          <div class="page-heading">
+            <p class="eyebrow">DEMOSHOP ANALYTICS</p>
+            <h1 id="section-title" tabindex="-1">Przegląd</h1>
+            <p id="section-description">Miejsce, w którym aktywność odwiedzających nabiera znaczenia.</p>
+          </div>
+
+          <section class="welcome-card" aria-labelledby="welcome-title">
+            <div class="welcome-text">
+              <span class="pill">TWÓJ PANEL ANALITYCZNY</span>
+              <h2 id="welcome-title">Dobre decyzje zaczynają się<br>od zrozumienia aktywności.</h2>
+              <p>Wybierz obszar z menu, aby poznać zakres przygotowywanych zestawień.</p>
+            </div>
+            <div class="welcome-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+          </section>
+
+          <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite">
+            <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
+            <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
+            <div id="section-topics" class="topic-grid"></div>
+            <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
+          </section>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 1</span></footer>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

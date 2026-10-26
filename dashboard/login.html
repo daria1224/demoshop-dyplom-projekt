@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Logowanie — DemoShop Analytics</title>
+    <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+    <script src="/dashboard/assets/dashboard.js" defer></script>
+  </head>
+  <body class="login-page" data-page="login">
+    <main class="login-layout">
+      <aside class="login-story" aria-label="DemoShop Analytics">
+        <a class="brand" href="/dashboard">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>DemoShop<span class="brand-subtitle">ANALYTICS</span></span>
+        </a>
+        <div class="story-content">
+          <p class="eyebrow light">OD INTERAKCJI DO WNIOSKÓW</p>
+          <h1>Każda interakcja<br>ma znaczenie.</h1>
+          <p>Twoje miejsce do poznawania aktywności odwiedzających DemoShop.</p>
+          <div class="story-art" aria-hidden="true">
+            <div class="art-orbit orbit-one"></div>
+            <div class="art-orbit orbit-two"></div>
+            <div class="art-node node-one"></div>
+            <div class="art-node node-two"></div>
+            <div class="art-node node-three"></div>
+            <div class="art-center"><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <p class="story-footer">DEMONSTRACYJNY SYSTEM ANALIZY AKTYWNOŚCI</p>
+      </aside>
+
+      <section class="login-content" aria-labelledby="login-title">
+        <div class="login-card">
+          <div class="access-badge"><span aria-hidden="true">↗</span> DOSTĘP WŁAŚCICIELA</div>
+          <h2 id="login-title">Panel właściciela</h2>
+          <p class="login-intro">Zaloguj się, aby przejść do swojego panelu DemoShop Analytics.</p>
+          <p id="login-status" class="status-message" role="status" aria-live="polite">Sprawdzanie sesji…</p>
+          <form id="login-form" action="/api/auth/login" method="post">
+            <fieldset id="login-fields" disabled>
+              <legend class="sr-only">Dane logowania właściciela</legend>
+              <label for="username">Login</label>
+              <input id="username" name="username" type="text" autocomplete="username" maxlength="100" required>
+              <label for="password">Hasło</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" maxlength="500" required>
+              <button class="button button-primary login-submit" type="submit">
+                <span id="login-button-label">Zaloguj się</span><span aria-hidden="true">→</span>
+              </button>
+            </fieldset>
+          </form>
+          <p class="login-footnote">Panel jest przeznaczony wyłącznie dla właściciela serwisu.</p>
+          <noscript><p class="status-message error">Włącz JavaScript, aby zalogować się do panelu.</p></noscript>
+        </div>
+        <footer class="login-footer">DemoShop Analytics <span aria-hidden="true">·</span> Przestrzeń właściciela</footer>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -12,7 +13,8 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from backend.auth import (
@@ -43,6 +45,28 @@ from backend.database import (
 )
 
 app = FastAPI()
+DASHBOARD_DIRECTORY = Path(__file__).resolve().parent.parent / "dashboard"
+app.mount(
+    "/dashboard/assets",
+    StaticFiles(directory=DASHBOARD_DIRECTORY / "assets"),
+    name="dashboard-assets",
+)
+
+
+@app.get("/dashboard/login", include_in_schema=False)
+def dashboard_login_page():
+    return FileResponse(
+        DASHBOARD_DIRECTORY / "login.html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard_page():
+    return FileResponse(
+        DASHBOARD_DIRECTORY / "index.html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.exception_handler(RequestValidationError)

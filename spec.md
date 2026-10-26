@@ -18,11 +18,12 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - agregacje zdarzeń, produktów, aktywności dziennej i odsłon stron;
 - statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
 - opcjonalne filtry dat dla zestawień analitycznych;
-- uwierzytelnianie jednego właściciela i ochrona API analitycznego.
+- uwierzytelnianie jednego właściciela i ochrona API analitycznego;
+- strona logowania i responsywny szkielet Dashboardu, z nawigacją pięciu sekcji.
 
 ### Funkcjonalności planowane w ramach pracy dyplomowej
 
-- Dashboard analityczny;
+- wykresy, tabele i filtry danych w Dashboardzie;
 - rozbudowana analityka, filtry i wizualizacje;
 - wdrożenie systemu w środowisku chmurowym.
 
@@ -51,9 +52,15 @@ Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą
 
 `backend/database.py` odczytuje `DATABASE_URL` ze zmiennych środowiskowych, używa psycopg i wykonuje zapytania parametryzowane. Operacje zapisu zdarzenia odbywają się w jednej transakcji. Definicje tabel znajdują się w `backend/schema.sql`.
 
-### 3.5. Planowany Dashboard
+### 3.5. Dashboard — etap 1
 
-Dashboard nie istnieje w aktualnej wersji. Ma być osobnym interfejsem prezentującym chronione dane z `/api/analytics/*`. Preferowane jest udostępnienie Dashboardu przez ten sam origin co FastAPI, aby nie rozszerzać CORS i nie przesyłać ciasteczka między witrynami.
+FastAPI obsługuje `/dashboard/login`, `/dashboard` oraz zasoby z `dashboard/assets` pod `/dashboard/assets`. Ścieżki do plików są wyznaczane względem projektu, niezależnie od bieżącego katalogu procesu. Panel wykorzystuje HTML, CSS i zwykły JavaScript, bez osobnego serwera frontendowego i procesu kompilacji.
+
+Dokumenty HTML mają `Cache-Control: no-store` i są publicznym szkieletem bez danych analitycznych. Cookie pozostaje ograniczone do `Path=/api`. Skrypt sprawdza `/api/auth/status` przed pokazaniem panelu. Brak aktywnej sesji przekierowuje do formularza, a aktywna sesja na stronie logowania przekierowuje do panelu. Kontrola następuje także przy zmianie sekcji, powrocie do karty i co 60 sekund w widocznej karcie. Po wykryciu wygaśnięcia następuje przekierowanie do logowania; dane API pozostają chronione niezależnie od skryptu.
+
+Formularz wysyła JSON do `/api/auth/login`, obsługuje Enter, oczekiwanie i komunikaty błędów. Wylogowanie wywołuje `/api/auth/logout`; niepowodzenie nie jest przedstawiane jako sukces. Żądania używają `credentials: same-origin`, względnych adresów API i limitu oczekiwania 10 sekund. Hasło nie jest logowane ani zapisywane w pamięci przeglądarki; pole jest czyszczone po próbie logowania.
+
+Nawigacja oparta na fragmentach URL przełącza Przegląd, Sesje, Strony i interakcje, Produkty i Zdarzenia, aktualizując nagłówek oraz aktywną pozycję menu. Sekcje zawierają wyłącznie opisy planowanych zestawień. Etap 1 nie pobiera jeszcze danych z `/api/analytics/*`, nie prezentuje statystyk, wykresów ani tabel. Nie uruchamia też mechanizmu zdarzeń publicznego sklepu.
 
 ### 3.6. Uwierzytelnianie właściciela
 
@@ -72,7 +79,7 @@ działanie użytkownika
   → sessions / pages / event_types / events
   → zapytania agregujące
   → GET /api/analytics/*
-  → planowany Dashboard
+  → planowana prezentacja w istniejącym szkielecie Dashboardu
 ```
 
 ## 5. Model zdarzenia
@@ -150,6 +157,8 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 | Metoda | Ścieżka | Stan | Wynik |
 |---|---|---|---|
 | `GET` | `/` | istnieje | komunikat kontrolny API |
+| `GET` | `/dashboard/login` | istnieje | publiczny formularz logowania |
+| `GET` | `/dashboard` | istnieje | szkielet interfejsu właściciela bez danych analitycznych |
 | `GET` | `/api/db-test` | istnieje | informacja o połączeniu z bazą |
 | `POST` | `/api/events` | istnieje | walidacja i zapis zdarzenia |
 | `POST` | `/api/auth/login` | istnieje | weryfikacja właściciela i utworzenie sesji |
@@ -276,6 +285,8 @@ Brak poprawnej konfiguracji zwraca 503 i nie otwiera dostępu do analityki. Brak
 `GET /api/auth/status` zwraca wyłącznie `authenticated`: brak, wygaśnięcie lub niepoprawność sesji, a także brak konfiguracji dają wartość `false`. Mechanizm właściciela jest niezależny od 30-minutowego limitu bezczynności pseudonimowych sesji sklepu. System nie zawiera rejestracji, ról, odzyskiwania haseł ani kont klientów.
 
 Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.env` oraz nie łączą się z Neon. Sprawdzają logowanie, błędy walidacji, Unicode, współbieżne rezerwacje, odpowiedzi 429, usuwanie wygasłych wpisów, zwalnianie rezerwacji po błędzie konfiguracji, cookie, wylogowanie i ochronę tras.
+
+`tests/test_dashboard.py` sprawdza serwowanie HTML i zasobów, brak danych uwierzytelniających w HTML, zachowanie ścieżki cookie, logowanie i wylogowanie, wygaśnięcie sesji oraz dostępność istniejących dziewięciu tras analitycznych z atrapami zapytań. Testy nie zapisują danych w Neon.
 
 ## 12. Bezpieczeństwo i ochrona danych
 

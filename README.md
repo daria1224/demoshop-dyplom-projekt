@@ -57,11 +57,18 @@ demoshop/
 ├── css/
 │   ├── cart.css          # style strony koszyka
 │   └── style.css         # wspólne style serwisu
+├── dashboard/
+│   ├── assets/
+│   │   ├── dashboard.css # style panelu i logowania
+│   │   └── dashboard.js  # sesja, formularz i przełączanie sekcji
+│   ├── index.html       # publiczny szkielet panelu właściciela
+│   └── login.html       # formularz logowania
 ├── js/
 │   ├── main.js           # interakcje, koszyk i rejestrowanie zdarzeń
 │   └── products.js       # demonstracyjny katalog produktów
 ├── tests/
-│   └── test_auth.py      # izolowane testy uwierzytelniania
+│   ├── test_auth.py      # izolowane testy uwierzytelniania
+│   └── test_dashboard.py # strony, zasoby i integracja sesji panelu
 ├── about.html
 ├── cart.html
 ├── contact.html
@@ -120,6 +127,8 @@ python -m uvicorn backend.main:app --reload
 
 API będzie dostępne pod adresem `http://127.0.0.1:8000`, a interaktywna dokumentacja pod `http://127.0.0.1:8000/docs`.
 
+Logowanie właściciela otwórz pod `http://127.0.0.1:8000/dashboard/login`, a panel pod `http://127.0.0.1:8000/dashboard`. Obie strony i ich zasoby obsługuje FastAPI; nie wymagają osobnego serwera frontendowego. W lokalnej konfiguracji HTTP potrzebne jest `AUTH_COOKIE_SECURE=false`. Dla HTTPS użyj `true`.
+
 ### 4. Frontend
 
 W drugim terminalu uruchom prosty serwer plików statycznych:
@@ -135,6 +144,8 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 | Metoda | Ścieżka | Działanie |
 |---|---|---|
 | `GET` | `/` | Informacja o działaniu API |
+| `GET` | `/dashboard/login` | Strona logowania właściciela |
+| `GET` | `/dashboard` | Szkielet panelu z pięcioma sekcjami |
 | `GET` | `/api/db-test` | Kontrola połączenia z PostgreSQL |
 | `POST` | `/api/events` | Walidacja i zapis pojedynczego zdarzenia |
 | `POST` | `/api/auth/login` | Logowanie właściciela i ustawienie ciasteczka sesyjnego |
@@ -168,7 +179,15 @@ Limiter dopuszcza łącznie najwyżej pięć nieudanych prób z ostatnich 15 min
 
 Sesja właściciela wygasa domyślnie po 30 minutach od logowania i nie jest automatycznie przedłużana aktywnością. Jest niezależna od pseudonimowej sesji odwiedzającego sklep. Wylogowanie usuwa ciasteczko z bieżącej przeglądarki; skopiowany token pozostaje ważny do wygaśnięcia. Zmiana sekretu podpisu unieważnia wszystkie sesje właściciela.
 
-Lokalne logowanie można sprawdzić przez `http://127.0.0.1:8000/docs`: wywołać `/api/auth/login`, następnie `/api/auth/status` i chronione API, a na końcu `/api/auth/logout`. Należy konsekwentnie używać tej samej nazwy hosta. Dashboard i formularz logowania nie są jeszcze zaimplementowane. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
+Lokalne logowanie można sprawdzić przez `/dashboard/login` albo Swagger UI. Formularz wysyła dane do `/api/auth/login`, a po sukcesie przechodzi do `/dashboard`. Należy konsekwentnie używać tej samej nazwy hosta. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
+
+## Dashboard — etap 1
+
+Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcje zawierają opisy przygotowywanych zestawień, bez fikcyjnych statystyk. Wizualizacje, tabele i filtry nie są jeszcze zaimplementowane.
+
+Dokumenty HTML są publicznymi szkieletami i nie zawierają danych analitycznych. Po otwarciu panel pokazuje stan ładowania i sprawdza `/api/auth/status`; brak aktywnej sesji kieruje do logowania. Kontrola jest ponawiana przy powrocie do karty, zmianie sekcji i co minutę w widocznej karcie. Przycisk wylogowania korzysta z istniejącego `/api/auth/logout`. Błędy połączenia mają czytelne komunikaty, a kontrolę sesji można ponowić.
+
+Żądania używają względnych adresów same-origin i ciasteczka `HttpOnly` z niezmienionym `Path=/api`. Dashboard nie zapisuje loginu, hasła ani tokenu w Local Storage lub Session Storage i nie korzysta ze śledzenia aktywności sklepu. Ochrona danych nadal działa na serwerze API.
 
 ## Testy uwierzytelniania
 
@@ -177,6 +196,8 @@ W środowisku testowym z zainstalowanymi zależnościami backendu i biblioteką 
 ```powershell
 python -m unittest discover -s tests -p test_auth.py -v
 ```
+
+Wszystkie testy, łącznie z integracją Dashboardu, uruchamia polecenie `python -m unittest discover -s tests -v`.
 
 Testy używają generowanych w pamięci danych i atrap konfiguracji oraz zapisu. Nie odczytują `.env` ani nie zapisują rekordów do Neon. Obejmują walidację bez ujawniania hasła, Unicode, równoczesne próby, limit i wygasanie wpisów, cookie, wylogowanie oraz ochronę API.
 
@@ -201,13 +222,14 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - ranking kliknięć grupowany według elementu, strony i opcjonalnego celu;
 - historia ostatnich zdarzeń z kontrolowaną listą zwracanych pól;
 - lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt;
-- uwierzytelnianie jednego właściciela i ochrona API analitycznego.
+- uwierzytelnianie jednego właściciela i ochrona API analitycznego;
+- strona logowania i responsywny szkielet Dashboardu z pięcioma działającymi sekcjami.
 
 ## Planowany rozwój
 
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
-- osobny Dashboard analityczny;
+- prezentacja rzeczywistych danych w Dashboardzie;
 - wykresy aktywności, popularności stron i produktów;
 - dalsze wskaźniki oraz wizualizacje dotyczące sesji;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
