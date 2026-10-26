@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Przegląd — DemoShop Analytics</title>
     <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+    <script src="/dashboard/assets/vendor/chart.js-4.6.1/chart.umd.min.js" defer></script>
     <script src="/dashboard/assets/dashboard.js" defer></script>
   </head>
   <body data-page="dashboard">
@@ -66,13 +67,65 @@
             <div class="welcome-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
           </section>
 
-          <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite">
+          <section id="overview-panel" class="overview-panel" aria-labelledby="overview-heading">
+            <div class="analytics-toolbar">
+              <div>
+                <p class="eyebrow">ZAKRES DANYCH</p>
+                <h2 id="overview-heading">Przegląd aktywności</h2>
+                <p id="filter-description">Wszystkie dane są prezentowane według dni UTC.</p>
+              </div>
+              <form id="date-filter" class="date-filter">
+                <label for="date-from">Od<input id="date-from" name="date_from" type="date"></label>
+                <label for="date-to">Do<input id="date-to" name="date_to" type="date"></label>
+                <button class="button button-primary" type="submit">Zastosuj</button>
+                <button id="clear-filter" class="button button-secondary" type="button">Cały okres</button>
+              </form>
+            </div>
+            <p id="filter-error" class="status-message error" role="alert" hidden></p>
+            <div id="overview-loading" class="analytics-state" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Pobieranie danych analitycznych…</p>
+            </div>
+            <div id="overview-error" class="analytics-state error-state" role="alert" hidden>
+              <h3>Nie udało się pobrać danych</h3>
+              <p>Sprawdź połączenie i spróbuj ponownie.</p>
+              <button id="overview-retry" class="button button-secondary" type="button">Spróbuj ponownie</button>
+            </div>
+            <div id="overview-empty" class="analytics-state" hidden>
+              <span class="empty-symbol" aria-hidden="true">↗</span>
+              <h3>Brak danych w wybranym okresie</h3>
+              <p>Zmień zakres dat albo wybierz cały dostępny okres.</p>
+            </div>
+            <div id="overview-content" hidden>
+              <div id="kpi-grid" class="kpi-grid" aria-label="Podstawowe wskaźniki"></div>
+              <div class="analytics-grid">
+                <article class="analytics-card activity-card">
+                  <div class="card-heading"><div><p class="eyebrow">TREND</p><h3>Aktywność w czasie</h3></div><span id="activity-total" class="card-total"></span></div>
+                  <div class="chart-container activity-chart"><canvas id="activity-chart" role="img" aria-label="Wykres liczby zdarzeń według dni"></canvas></div>
+                  <p id="activity-summary" class="sr-only"></p>
+                </article>
+                <article class="analytics-card">
+                  <div class="card-heading"><div><p class="eyebrow">STRUKTURA</p><h3>Rodzaje zdarzeń</h3></div></div>
+                  <div class="chart-container events-chart"><canvas id="events-chart" role="img" aria-label="Wykres liczby zdarzeń według typu"></canvas></div>
+                  <p id="events-summary" class="sr-only"></p>
+                </article>
+                <article class="analytics-card pages-card">
+                  <div class="card-heading"><div><p class="eyebrow">POPULARNOŚĆ</p><h3>Najpopularniejsze strony</h3></div></div>
+                  <div id="pages-chart-container" class="chart-container pages-chart"><canvas id="pages-chart" role="img" aria-label="Poziomy wykres najpopularniejszych stron"></canvas></div>
+                  <p id="pages-empty" class="chart-empty" hidden>Brak odsłon stron w wybranym okresie.</p>
+                  <ol id="pages-ranking" class="sr-only" aria-label="Ranking stron według liczby odsłon"></ol>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite" hidden>
             <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
             <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
             <div id="section-topics" class="topic-grid"></div>
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
           </section>
-          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 1</span></footer>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 2</span></footer>
         </main>
       </div>
     </div>

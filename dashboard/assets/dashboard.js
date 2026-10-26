@@ -58,8 +58,303 @@ const sections = {
   }
 };
 
+const eventLabels = {
+  page_view: 'Odsłony stron',
+  click: 'Kliknięcia',
+  view_item: 'Wyświetlenia produktów',
+  add_to_cart: 'Dodania do koszyka',
+  form_submit: 'Wysłania formularza'
+};
+
+const numberFormatter = new Intl.NumberFormat('pl-PL');
+const chartInstances = {};
+const pageDefinitions = {
+  '/': { key: 'home', label: 'Strona główna' },
+  '/index.html': { key: 'home', label: 'Strona główna' },
+  '/products.html': { key: 'products', label: 'Produkty' },
+  '/product.html': { key: 'product', label: 'Szczegóły produktu' },
+  '/cart.html': { key: 'cart', label: 'Koszyk' },
+  '/about.html': { key: 'about', label: 'O nas' },
+  '/contact.html': { key: 'contact', label: 'Kontakt' }
+};
+
+function buildDateQuery(dateFrom = '', dateTo = '') {
+  const parameters = new URLSearchParams();
+  if (dateFrom) parameters.set('date_from', dateFrom);
+  if (dateTo) parameters.set('date_to', dateTo);
+  const query = parameters.toString();
+  return query ? `?${query}` : '';
+}
+
+function validateDateRange(dateFrom, dateTo) {
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    return 'Data „Od” nie może być późniejsza niż data „Do”.';
+  }
+  return '';
+}
+
+function needsDashboardRender(authenticated, shellHidden) {
+  return !authenticated || shellHidden;
+}
+
+function formatNumber(value) {
+  return numberFormatter.format(Number(value) || 0);
+}
+
+function normalizeDemoShopPage(value) {
+  const rawPath = typeof value === 'string' ? value.trim().replaceAll('\\', '/') : '';
+  const pathWithoutParameters = rawPath.split(/[?#]/, 1)[0];
+  const normalizedPath = pathWithoutParameters.length > 1
+    ? pathWithoutParameters.replace(/\/+$/, '')
+    : pathWithoutParameters;
+  const directMatch = pageDefinitions[normalizedPath.toLowerCase()];
+  if (directMatch) return directMatch;
+
+  const historicalMatch = normalizedPath.match(
+    /(?:^|\/)demoshop\/(index|products|product|cart|about|contact)\.html$/i
+  );
+  if (historicalMatch) {
+    return pageDefinitions[`/${historicalMatch[1].toLowerCase()}.html`];
+  }
+
+  return { key: `unknown:${normalizedPath}`, label: null };
+}
+
+function aggregatePageViews(rows) {
+  const pages = new Map();
+  rows.forEach(row => {
+    const normalized = normalizeDemoShopPage(row.page);
+    const existing = pages.get(normalized.key) || {
+      key: normalized.key,
+      label: normalized.label,
+      view_count: 0
+    };
+    existing.view_count += Number(row.view_count) || 0;
+    pages.set(normalized.key, existing);
+  });
+
+  const sorted = [...pages.values()].sort((first, second) => (
+    second.view_count - first.view_count
+    || (first.label || '').localeCompare(second.label || '', 'pl')
+    || first.key.localeCompare(second.key)
+  ));
+  let unknownIndex = 0;
+  return sorted.map(page => {
+    if (page.label) {
+      return { label: page.label, view_count: page.view_count };
+    }
+    unknownIndex += 1;
+    return {
+      label: sorted.filter(item => !item.label).length === 1
+        ? 'Inna strona'
+        : `Inna strona ${unknownIndex}`,
+      view_count: page.view_count
+    };
+  });
+}
+
+function buildActivityChartConfig(rows) {
+  return {
+    type: 'line',
+    data: {
+      labels: rows.map(row => row.date),
+      datasets: [{
+        label: 'Zdarzenia',
+        data: rows.map(row => Number(row.event_count) || 0),
+        borderColor: '#186c60',
+        backgroundColor: 'rgba(24, 108, 96, .12)',
+        pointBackgroundColor: '#ffffff',
+        pointBorderColor: '#186c60',
+        pointBorderWidth: 2,
+        pointRadius: rows.length < 3 ? 5 : 3,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        fill: true,
+        tension: rows.length < 3 ? 0 : .28
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: context => `Zdarzenia: ${formatNumber(context.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: '#647780', maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: '#edf1ef' },
+          ticks: { color: '#647780', precision: 0 }
+        }
+      }
+    }
+  };
+}
+
+function buildEventsChartConfig(rows) {
+  const valuePlugin = {
+    id: 'eventValueLabels',
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea } = chart;
+      const metadata = chart.getDatasetMeta(0);
+      ctx.save();
+      ctx.fillStyle = '#edf2ef';
+      metadata.data.forEach(bar => {
+        ctx.beginPath();
+        ctx.roundRect(chartArea.left, bar.y - 4, chartArea.width, 8, 4);
+        ctx.fill();
+      });
+      ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea } = chart;
+      const metadata = chart.getDatasetMeta(0);
+      ctx.save();
+      ctx.fillStyle = '#172d35';
+      ctx.font = '600 11px "Segoe UI", Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      metadata.data.forEach((bar, index) => {
+        ctx.fillText(formatNumber(chart.data.datasets[0].data[index]), chartArea.right + 9, bar.y);
+      });
+      ctx.restore();
+    }
+  };
+  return {
+    type: 'bar',
+    data: {
+      labels: rows.map(row => eventLabels[row.event_type] || row.event_type),
+      datasets: [{
+        label: 'Zdarzenia',
+        data: rows.map(row => Number(row.event_count) || 0),
+        backgroundColor: '#6f9c84',
+        hoverBackgroundColor: '#186c60',
+        borderRadius: 5,
+        borderSkipped: false,
+        barThickness: 8
+      }]
+    },
+    plugins: [valuePlugin],
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { right: 55 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: context => `Zdarzenia: ${formatNumber(context.parsed.x)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          display: false,
+          suggestedMax: Math.max(1, ...rows.map(row => Number(row.event_count) || 0))
+        },
+        y: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { color: '#172d35', padding: 10 }
+        }
+      }
+    }
+  };
+}
+
+function buildPagesChartConfig(rows) {
+  const visibleRows = aggregatePageViews(rows).slice(0, 6);
+  return {
+    type: 'bar',
+    data: {
+      labels: visibleRows.map(row => row.label),
+      datasets: [{
+        label: 'Odsłony',
+        data: visibleRows.map(row => Number(row.view_count) || 0),
+        backgroundColor: '#6f9c84',
+        hoverBackgroundColor: '#186c60',
+        borderRadius: 5,
+        borderSkipped: false,
+        barThickness: 17
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: context => `Odsłony: ${formatNumber(context.parsed.x)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { color: '#edf1ef' },
+          ticks: { color: '#647780', precision: 0 }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: '#172d35' }
+        }
+      }
+    }
+  };
+}
+
+function replaceChart(name, canvas, config, ChartConstructor = Chart) {
+  if (chartInstances[name]) chartInstances[name].destroy();
+  chartInstances[name] = new ChartConstructor(canvas, config);
+  return chartInstances[name];
+}
+
+function destroyCharts() {
+  Object.keys(chartInstances).forEach(name => {
+    chartInstances[name].destroy();
+    delete chartInstances[name];
+  });
+}
+
+function destroyChart(name) {
+  if (!chartInstances[name]) return;
+  chartInstances[name].destroy();
+  delete chartInstances[name];
+}
+
+async function loadOverviewAnalytics(filters, request = authRequest, signal) {
+  const query = buildDateQuery(filters.dateFrom, filters.dateTo);
+  const endpoints = ['summary', 'sessions', 'activity', 'events', 'pages'];
+  const [summary, sessions, activity, events, pages] = await Promise.all(
+    endpoints.map(endpoint => request(`/api/analytics/${endpoint}${query}`, { signal }))
+  );
+  return { summary, sessions, activity, events, pages };
+}
+
 async function authRequest(path, options = {}) {
   const controller = new AbortController();
+  const externalSignal = options.signal;
+  const abortFromExternal = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    externalSignal.addEventListener('abort', abortFromExternal);
+  }
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const response = await fetch(path, {
@@ -76,6 +371,7 @@ async function authRequest(path, options = {}) {
     return await response.json();
   } finally {
     clearTimeout(timeout);
+    if (externalSignal) externalSignal.removeEventListener('abort', abortFromExternal);
   }
 }
 
@@ -146,6 +442,97 @@ function setupLogin() {
   });
 }
 
+function renderKpis(summary, sessions) {
+  const values = [
+    ['Zdarzenia', summary.total_events],
+    ['Sesje', summary.total_sessions],
+    ['Odsłony stron', summary.page_views],
+    ['Kliknięcia', summary.clicks],
+    ['Wyświetlenia produktów', summary.product_views],
+    ['Dodania do koszyka', summary.add_to_cart]
+  ];
+  const grid = document.querySelector('#kpi-grid');
+  grid.replaceChildren();
+  values.forEach(([label, value], index) => {
+    const card = document.createElement('article');
+    card.className = 'kpi-card';
+    const number = document.createElement('span');
+    number.className = 'kpi-number';
+    number.textContent = formatNumber(value);
+    const title = document.createElement('h3');
+    title.textContent = label;
+    const note = document.createElement('p');
+    note.textContent = index === 1 ? 'Zarejestrowane sesje, nie osoby' : 'W wybranym okresie';
+    card.append(number, title, note);
+    grid.append(card);
+  });
+
+  const sessionNote = document.createElement('p');
+  sessionNote.className = 'session-summary';
+  sessionNote.textContent = `Średnio ${formatNumber(sessions.average_events_per_session)} zdarzeń na sesję · średni czas zarejestrowanej aktywności: ${formatNumber(sessions.average_activity_duration_seconds)} s`;
+  grid.append(sessionNote);
+}
+
+function renderActivity(rows) {
+  const summary = document.querySelector('#activity-summary');
+  const total = rows.reduce((sum, row) => sum + (Number(row.event_count) || 0), 0);
+  document.querySelector('#activity-total').textContent = `${formatNumber(total)} zdarzeń`;
+  summary.textContent = rows.map(row => `${row.date}: ${formatNumber(row.event_count)}`).join('; ');
+  replaceChart(
+    'activity',
+    document.querySelector('#activity-chart'),
+    buildActivityChartConfig(rows)
+  );
+}
+
+function renderEventTypes(rows) {
+  document.querySelector('#events-summary').textContent = rows
+    .map(row => `${eventLabels[row.event_type] || row.event_type}: ${formatNumber(row.event_count)}`)
+    .join('; ');
+  replaceChart(
+    'events',
+    document.querySelector('#events-chart'),
+    buildEventsChartConfig(rows)
+  );
+}
+
+function renderPages(rows) {
+  const ranking = document.querySelector('#pages-ranking');
+  const normalizedRows = aggregatePageViews(rows).slice(0, 6);
+  const chartContainer = document.querySelector('#pages-chart-container');
+  const emptyMessage = document.querySelector('#pages-empty');
+  ranking.replaceChildren();
+  normalizedRows.forEach((row, index) => {
+    const item = document.createElement('li');
+    const position = document.createElement('span');
+    position.className = 'ranking-position';
+    position.textContent = String(index + 1).padStart(2, '0');
+    const page = document.createElement('span');
+    page.className = 'ranking-page';
+    page.textContent = row.label;
+    const value = document.createElement('strong');
+    value.textContent = formatNumber(row.view_count);
+    const suffix = document.createElement('small');
+    suffix.textContent = ' odsłon';
+    value.append(suffix);
+    item.append(position, page, value);
+    ranking.append(item);
+  });
+  if (!normalizedRows.length) {
+    destroyChart('pages');
+    chartContainer.hidden = true;
+    emptyMessage.hidden = false;
+    return;
+  }
+  chartContainer.hidden = false;
+  emptyMessage.hidden = true;
+  replaceChart(
+    'pages',
+    document.querySelector('#pages-chart'),
+    buildPagesChartConfig(rows)
+  );
+}
+
 function setupDashboard() {
   const gate = document.querySelector('#session-gate');
   const shell = document.querySelector('#dashboard-shell');
@@ -154,8 +541,72 @@ function setupDashboard() {
   const spinner = document.querySelector('#session-spinner');
   const status = document.querySelector('#dashboard-status');
   const logout = document.querySelector('#logout-button');
+  const overviewPanel = document.querySelector('#overview-panel');
+  const placeholderPanel = document.querySelector('#section-panel');
+  const filterForm = document.querySelector('#date-filter');
+  const dateFrom = document.querySelector('#date-from');
+  const dateTo = document.querySelector('#date-to');
+  const filterError = document.querySelector('#filter-error');
+  const overviewLoading = document.querySelector('#overview-loading');
+  const overviewError = document.querySelector('#overview-error');
+  const overviewEmpty = document.querySelector('#overview-empty');
+  const overviewContent = document.querySelector('#overview-content');
   let checking = false;
   let authenticated = false;
+  let overviewController = null;
+  let overviewRequestId = 0;
+
+  function showOverviewState(state) {
+    overviewLoading.hidden = state !== 'loading';
+    overviewError.hidden = state !== 'error';
+    overviewEmpty.hidden = state !== 'empty';
+    overviewContent.hidden = state !== 'content';
+  }
+
+  async function refreshOverview() {
+    if (!authenticated || window.location.hash.slice(1) && window.location.hash !== '#overview') return;
+    const validationError = validateDateRange(dateFrom.value, dateTo.value);
+    filterError.hidden = !validationError;
+    filterError.textContent = validationError;
+    if (validationError) return;
+
+    if (overviewController) overviewController.abort();
+    overviewController = new AbortController();
+    const requestId = ++overviewRequestId;
+    showOverviewState('loading');
+    filterForm.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try {
+      const data = await loadOverviewAnalytics(
+        { dateFrom: dateFrom.value, dateTo: dateTo.value },
+        authRequest,
+        overviewController.signal
+      );
+      if (requestId !== overviewRequestId) return;
+      if (!data.summary.total_events) {
+        destroyCharts();
+        showOverviewState('empty');
+        return;
+      }
+      showOverviewState('content');
+      renderKpis(data.summary, data.sessions);
+      renderActivity(data.activity);
+      renderEventTypes(data.events);
+      renderPages(data.pages);
+    } catch (error) {
+      if (requestId !== overviewRequestId || error.name === 'AbortError') return;
+      if (error.status === 401) {
+        authenticated = false;
+        shell.hidden = true;
+        goToLogin();
+        return;
+      }
+      showOverviewState('error');
+    } finally {
+      if (requestId === overviewRequestId) {
+        filterForm.querySelectorAll('button').forEach(button => { button.disabled = false; });
+      }
+    }
+  }
 
   function showSection(moveFocus = false) {
     const requested = window.location.hash.slice(1);
@@ -168,6 +619,8 @@ function setupDashboard() {
     document.querySelector('#panel-title').textContent = section.heading;
     document.querySelector('#panel-description').textContent = section.detail;
     document.querySelector('#panel-symbol').setAttribute('href', `#icon-${key}`);
+    overviewPanel.hidden = key !== 'overview';
+    placeholderPanel.hidden = key === 'overview';
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
@@ -189,6 +642,7 @@ function setupDashboard() {
       topics.append(card);
     });
     if (moveFocus && authenticated) title.focus();
+    if (key === 'overview' && authenticated) refreshOverview();
   }
 
   async function checkSession() {
@@ -205,10 +659,11 @@ function setupDashboard() {
         goToLogin();
         return;
       }
+      const needsInitialRender = needsDashboardRender(authenticated, shell.hidden);
       authenticated = true;
-      showSection();
       gate.hidden = true;
       shell.hidden = false;
+      if (needsInitialRender) showSection();
     } catch {
       authenticated = false;
       shell.hidden = true;
@@ -245,6 +700,17 @@ function setupDashboard() {
   });
 
   retry.addEventListener('click', checkSession);
+  filterForm.addEventListener('submit', event => {
+    event.preventDefault();
+    refreshOverview();
+  });
+  document.querySelector('#clear-filter').addEventListener('click', () => {
+    dateFrom.value = '';
+    dateTo.value = '';
+    filterError.hidden = true;
+    refreshOverview();
+  });
+  document.querySelector('#overview-retry').addEventListener('click', refreshOverview);
   window.addEventListener('hashchange', () => {
     showSection(true);
     checkSession();
@@ -264,5 +730,26 @@ function setupDashboard() {
   checkSession();
 }
 
-if (document.body.dataset.page === 'login') setupLogin();
-if (document.body.dataset.page === 'dashboard') setupDashboard();
+if (typeof document !== 'undefined') {
+  if (document.body.dataset.page === 'login') setupLogin();
+  if (document.body.dataset.page === 'dashboard') setupDashboard();
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    aggregatePageViews,
+    buildActivityChartConfig,
+    buildDateQuery,
+    buildEventsChartConfig,
+    buildPagesChartConfig,
+    chartInstances,
+    destroyChart,
+    destroyCharts,
+    formatNumber,
+    loadOverviewAnalytics,
+    needsDashboardRender,
+    normalizeDemoShopPage,
+    replaceChart,
+    validateDateRange
+  };
+}

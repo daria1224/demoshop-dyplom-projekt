@@ -143,13 +143,20 @@ def save_event(
         connection.close()
 
 
-def get_analytics_summary() -> dict[str, int]:
+def get_analytics_summary(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, int]:
     connection = _open_database_connection()
 
     try:
         with connection.cursor() as cursor:
+            date_filter, parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
             cursor.execute(
-                """
+                f"""
                 SELECT
                     COUNT(*) AS total_events,
                     COUNT(DISTINCT e.session_id) AS total_sessions,
@@ -159,7 +166,9 @@ def get_analytics_summary() -> dict[str, int]:
                     COUNT(*) FILTER (WHERE et.name = 'add_to_cart') AS add_to_cart
                 FROM events e
                 JOIN event_types et ON et.id = e.event_type_id
-                """
+                {date_filter}
+                """,
+                parameters,
             )
             row = cursor.fetchone()
 
@@ -175,19 +184,28 @@ def get_analytics_summary() -> dict[str, int]:
         connection.close()
 
 
-def get_events_by_type() -> list[dict[str, object]]:
+def get_events_by_type(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict[str, object]]:
     connection = _open_database_connection()
 
     try:
         with connection.cursor() as cursor:
+            date_filter, parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
             cursor.execute(
-                """
+                f"""
                 SELECT et.name, COUNT(e.id) AS event_count
                 FROM event_types et
                 JOIN events e ON e.event_type_id = et.id
+                {date_filter}
                 GROUP BY et.name
                 ORDER BY event_count DESC, et.name
-                """
+                """,
+                parameters,
             )
             rows = cursor.fetchall()
 

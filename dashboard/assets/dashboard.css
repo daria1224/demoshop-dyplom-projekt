@@ -802,6 +802,214 @@ input:focus {
   margin-top: 6px;
 }
 
+.overview-panel {
+  margin-top: 25px;
+}
+
+.analytics-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 24px;
+}
+
+.analytics-toolbar h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 8px 0 6px;
+}
+
+.analytics-toolbar > div > p:last-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.date-filter {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+}
+
+.date-filter label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  margin: 0;
+}
+
+.date-filter input {
+  min-height: 42px;
+  width: 145px;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.date-filter .button {
+  min-height: 42px;
+  padding: 10px 14px;
+}
+
+#filter-error {
+  margin-top: 12px;
+}
+
+.analytics-state {
+  min-height: 220px;
+  margin-top: 16px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 35px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.analytics-state h3 {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.analytics-state p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.error-state {
+  border-color: #f2d1ca;
+  background: #fff9f7;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.kpi-card {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 19px 17px;
+}
+
+.kpi-card:nth-child(-n+2) {
+  background: #eef4ec;
+  border-color: #dce7d8;
+}
+
+.kpi-number {
+  display: block;
+  color: var(--accent);
+  font-size: clamp(23px, 2.1vw, 32px);
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.kpi-card h3 {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 11px;
+}
+
+.kpi-card p {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+  margin-top: 5px;
+}
+
+.session-summary {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 0 4px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.analytics-card {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.activity-card {
+  min-height: 350px;
+}
+
+.pages-card {
+  grid-column: 1 / -1;
+}
+
+.card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-heading h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 7px;
+}
+
+.card-total {
+  color: var(--muted);
+  font-size: 10px;
+  background: #f4f7f5;
+  border-radius: 12px;
+  padding: 7px 10px;
+}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  margin-top: 27px;
+}
+
+.activity-chart {
+  height: 235px;
+}
+
+.events-chart {
+  height: 270px;
+}
+
+.pages-chart {
+  height: 255px;
+}
+
+.chart-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .dashboard-footer {
   display: flex;
   justify-content: space-between;
@@ -843,6 +1051,13 @@ input:focus {
   }
   .section-panel {
     padding: 23px;
+  }
+  .analytics-toolbar {
+    align-items: start;
+    flex-direction: column;
+  }
+  .kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -939,6 +1154,43 @@ input:focus {
   }
   .section-panel {
     padding: 21px;
+  }
+  .analytics-toolbar {
+    padding: 20px;
+  }
+  .date-filter {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 14px;
+    row-gap: 12px;
+    width: 100%;
+  }
+  .date-filter input {
+    width: 100%;
+  }
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+  .pages-card {
+    grid-column: auto;
+  }
+  .analytics-card {
+    padding: 20px;
+  }
+  .activity-card {
+    min-height: 310px;
+  }
+  .activity-chart {
+    height: 210px;
+  }
+  .events-chart {
+    height: 285px;
+  }
+  .pages-chart {
+    height: 275px;
   }
   .dashboard-footer {
     flex-wrap: wrap;

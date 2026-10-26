@@ -52,15 +52,23 @@ Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą
 
 `backend/database.py` odczytuje `DATABASE_URL` ze zmiennych środowiskowych, używa psycopg i wykonuje zapytania parametryzowane. Operacje zapisu zdarzenia odbywają się w jednej transakcji. Definicje tabel znajdują się w `backend/schema.sql`.
 
-### 3.5. Dashboard — etap 1
+### 3.5. Dashboard — etap 2
 
-FastAPI obsługuje `/dashboard/login`, `/dashboard` oraz zasoby z `dashboard/assets` pod `/dashboard/assets`. Ścieżki do plików są wyznaczane względem projektu, niezależnie od bieżącego katalogu procesu. Panel wykorzystuje HTML, CSS i zwykły JavaScript, bez osobnego serwera frontendowego i procesu kompilacji.
+FastAPI obsługuje `/dashboard/login`, `/dashboard` oraz zasoby z `dashboard/assets` pod `/dashboard/assets`. Ścieżki do plików są wyznaczane względem projektu, niezależnie od bieżącego katalogu procesu. Panel wykorzystuje HTML, CSS i zwykły JavaScript, bez osobnego serwera frontendowego i procesu kompilacji. Wizualizacje tworzy Chart.js 4.6.1 w wersji UMD zapisanej lokalnie w `dashboard/assets/vendor/chart.js-4.6.1`; oryginalna licencja MIT znajduje się obok pliku biblioteki. W czasie działania nie jest wymagany zewnętrzny CDN.
 
 Dokumenty HTML mają `Cache-Control: no-store` i są publicznym szkieletem bez danych analitycznych. Cookie pozostaje ograniczone do `Path=/api`. Skrypt sprawdza `/api/auth/status` przed pokazaniem panelu. Brak aktywnej sesji przekierowuje do formularza, a aktywna sesja na stronie logowania przekierowuje do panelu. Kontrola następuje także przy zmianie sekcji, powrocie do karty i co 60 sekund w widocznej karcie. Po wykryciu wygaśnięcia następuje przekierowanie do logowania; dane API pozostają chronione niezależnie od skryptu.
 
 Formularz wysyła JSON do `/api/auth/login`, obsługuje Enter, oczekiwanie i komunikaty błędów. Wylogowanie wywołuje `/api/auth/logout`; niepowodzenie nie jest przedstawiane jako sukces. Żądania używają `credentials: same-origin`, względnych adresów API i limitu oczekiwania 10 sekund. Hasło nie jest logowane ani zapisywane w pamięci przeglądarki; pole jest czyszczone po próbie logowania.
 
-Nawigacja oparta na fragmentach URL przełącza Przegląd, Sesje, Strony i interakcje, Produkty i Zdarzenia, aktualizując nagłówek oraz aktywną pozycję menu. Sekcje zawierają wyłącznie opisy planowanych zestawień. Etap 1 nie pobiera jeszcze danych z `/api/analytics/*`, nie prezentuje statystyk, wykresów ani tabel. Nie uruchamia też mechanizmu zdarzeń publicznego sklepu.
+Nawigacja oparta na fragmentach URL przełącza Przegląd, Sesje, Strony i interakcje, Produkty i Zdarzenia, aktualizując nagłówek oraz aktywną pozycję menu. Sekcja Przegląd pobiera po pozytywnej kontroli sesji równolegle dane z `summary`, `sessions`, `activity`, `events` i `pages`. Prezentuje sześć KPI oraz trzy responsywne wykresy Chart.js: liniową aktywność według dni UTC oraz poziome wykresy typów zdarzeń i maksymalnie sześciu stron. Wykres typów używa lokalnego pluginu Chart.js do rysowania jasnego tła pasków i dokładnych wartości. Tekstowe podsumowania pozostają dostępne dla technologii asystujących. Dane tekstowe są umieszczane w DOM przez `textContent`.
+
+Warstwa prezentacji mapuje sześć znanych podstron DemoShop na polskie etykiety. `/` i `/index.html` tworzą jedną kategorię `Strona główna`. Historyczne ścieżki są rozpoznawane tylko wtedy, gdy zawierają segment katalogu `demoshop` i kończą się nazwą jednej ze znanych podstron. Liczniki są sumowane przed sortowaniem i ograniczeniem rankingu. Nierozpoznane adresy pozostają osobnymi grupami prezentowanymi jako `Inna strona`, bez ujawniania katalogów lokalnego systemu plików.
+
+Każde ponowne renderowanie niszczy poprzednią instancję wykresu przed utworzeniem kolejnej. Zapobiega to konfliktom elementów `canvas`, duplikowaniu wykresów i pozostawianiu obserwatorów po zmianie filtra. Pusty wynik niszczy wszystkie aktywne instancje i pokazuje wspólny stan braku danych.
+
+Filtr Przeglądu przekazuje wspólne `date_from` i `date_to` do wszystkich pięciu endpointów. Są to włączne granice dni UTC; brak obu wartości oznacza cały dostępny okres. Odwrócony zakres jest odrzucany w interfejsie oraz przez API. Każde nowe pobranie anuluje poprzednie przez `AbortController`, a numer żądania chroni przed nadpisaniem wyniku przez spóźnioną odpowiedź. Interfejs rozróżnia ładowanie, pusty wynik, błąd sieciowy lub HTTP i `401`, który powoduje przejście do logowania. Pozostałe cztery sekcje nadal są szkieletami i nie pobierają danych. Dashboard nie uruchamia mechanizmu zdarzeń publicznego sklepu.
+
+Kontrola ważności sesji jest wykonywana co 60 sekund w widocznej karcie, ale nie wywołuje ponownego renderowania aktywnego Dashboardu. Dane i wykresy są pobierane po początkowym wejściu, zmianie filtra, ponownym wejściu do Przeglądu albo przywróceniu dokumentu z pamięci nawigacji przeglądarki. Wszystkie wykresy mają wyłączone animacje, dzięki czemu kontrola sesji i zmiany rozmiaru nie powodują cyklicznego odtwarzania wizualizacji.
 
 ### 3.6. Uwierzytelnianie właściciela
 
@@ -174,7 +182,7 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 | `GET` | `/api/analytics/recent-events` | istnieje | najnowsze zdarzenia z kontrolowanym zestawem pól |
 | `GET` | `/api/analytics/funnel` | istnieje | lejek wyświetlenie produktu → dodanie do koszyka |
 
-`activity` i `pages` przyjmują opcjonalne `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do UTC. Odwrócony zakres jest odrzucany kodem 422. `activity` uzupełnia dni z wartością zero tylko wtedy, gdy określono obie granice.
+`summary`, `events`, `activity` i `pages` przyjmują opcjonalne `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do UTC. Odwrócony zakres jest odrzucany kodem 422. `activity` uzupełnia dni z wartością zero tylko wtedy, gdy określono obie granice. Brak filtrów zachowuje wcześniejsze odpowiedzi obejmujące cały okres.
 
 `sessions` i `clicks` przyjmują takie same opcjonalne, włączne granice dni UTC. W `sessions` zakres wybiera zdarzenia, a nie całe historyczne sesje: uwzględniane są sesje z co najmniej jednym zdarzeniem w okresie, natomiast ich liczba zdarzeń i czas aktywności są obliczane wyłącznie z danych należących do okresu.
 
@@ -286,7 +294,7 @@ Brak poprawnej konfiguracji zwraca 503 i nie otwiera dostępu do analityki. Brak
 
 Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.env` oraz nie łączą się z Neon. Sprawdzają logowanie, błędy walidacji, Unicode, współbieżne rezerwacje, odpowiedzi 429, usuwanie wygasłych wpisów, zwalnianie rezerwacji po błędzie konfiguracji, cookie, wylogowanie i ochronę tras.
 
-`tests/test_dashboard.py` sprawdza serwowanie HTML i zasobów, brak danych uwierzytelniających w HTML, zachowanie ścieżki cookie, logowanie i wylogowanie, wygaśnięcie sesji oraz dostępność istniejących dziewięciu tras analitycznych z atrapami zapytań. Testy nie zapisują danych w Neon.
+`tests/test_dashboard.py` sprawdza serwowanie HTML, lokalnego Chart.js i pozostałych zasobów, brak danych uwierzytelniających w HTML, zachowanie ścieżki cookie, logowanie i wylogowanie, wygaśnięcie sesji, dostępność istniejących dziewięciu tras oraz przekazywanie filtrów dat do pięciu zapytań Przeglądu. `tests/test_dashboard_ui.js` sprawdza budowę parametrów, walidację zakresu, konfiguracje trzech wykresów Chart.js, niszczenie poprzednich instancji, struktury atrap odpowiedzi, błędy `401` i anulowanie starszych żądań. Testy nie zapisują danych w Neon.
 
 ## 12. Bezpieczeństwo i ochrona danych
 

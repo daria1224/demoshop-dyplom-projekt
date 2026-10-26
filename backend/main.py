@@ -128,9 +128,14 @@ def test_database_connection():
 
 
 @analytics_router.get("/summary")
-def get_summary():
+def get_summary(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
     try:
-        return get_analytics_summary()
+        return get_analytics_summary(date_from=date_from, date_to=date_to)
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -139,9 +144,14 @@ def get_summary():
 
 
 @analytics_router.get("/events")
-def get_analytics_events():
+def get_analytics_events(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
     try:
-        return get_events_by_type()
+        return get_events_by_type(date_from=date_from, date_to=date_to)
     except Exception:
         raise HTTPException(
             status_code=500,

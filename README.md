@@ -35,6 +35,7 @@ Frontend zapisuje zdarzenia również w konsoli przeglądarki, co ułatwia lokal
 ## Technologie
 
 - HTML5, CSS3 i JavaScript;
+- Chart.js 4.6.1 do wykresów Dashboardu;
 - Local Storage;
 - Python 3.13;
 - FastAPI i Pydantic;
@@ -59,8 +60,9 @@ demoshop/
 │   └── style.css         # wspólne style serwisu
 ├── dashboard/
 │   ├── assets/
+│   │   ├── vendor/       # lokalny Chart.js 4.6.1 i licencja MIT
 │   │   ├── dashboard.css # style panelu i logowania
-│   │   └── dashboard.js  # sesja, formularz i przełączanie sekcji
+│   │   └── dashboard.js  # sesja, dane, wykresy i przełączanie sekcji
 │   ├── index.html       # publiczny szkielet panelu właściciela
 │   └── login.html       # formularz logowania
 ├── js/
@@ -161,7 +163,7 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 | `GET` | `/api/analytics/recent-events` | Historia najnowszych zdarzeń z bezpiecznym zestawem pól |
 | `GET` | `/api/analytics/funnel` | Lejek wyświetlenie produktu → dodanie do koszyka |
 
-Endpointy `/api/analytics/activity` i `/api/analytics/pages` przyjmują opcjonalne parametry `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do dni w UTC. Pełny przedział w `/activity` zawiera także dni bez zdarzeń, z wartością `0`.
+Endpointy `/api/analytics/summary`, `/api/analytics/events`, `/api/analytics/activity` i `/api/analytics/pages` przyjmują opcjonalne parametry `date_from` i `date_to` w formacie `YYYY-MM-DD`. Granice są włączne i odnoszą się do dni w UTC. Pełny przedział w `/activity` zawiera także dni bez zdarzeń, z wartością `0`.
 
 Endpointy `/api/analytics/sessions` i `/api/analytics/clicks` obsługują te same opcjonalne granice dni UTC. W analityce sesji filtr wybiera zdarzenia z okresu, a statystyki każdej sesji są liczone wyłącznie na podstawie zdarzeń znajdujących się w tym okresie.
 
@@ -181,11 +183,17 @@ Sesja właściciela wygasa domyślnie po 30 minutach od logowania i nie jest aut
 
 Lokalne logowanie można sprawdzić przez `/dashboard/login` albo Swagger UI. Formularz wysyła dane do `/api/auth/login`, a po sukcesie przechodzi do `/dashboard`. Należy konsekwentnie używać tej samej nazwy hosta. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
 
-## Dashboard — etap 1
+## Dashboard — etap 2
 
-Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcje zawierają opisy przygotowywanych zestawień, bez fikcyjnych statystyk. Wizualizacje, tabele i filtry nie są jeszcze zaimplementowane.
+Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcja Przegląd prezentuje rzeczywiste dane z chronionego API: sześć kart KPI, liniowy wykres aktywności oraz poziome wykresy typów zdarzeń i sześciu najpopularniejszych stron. Wykresy tworzy lokalna, wersjonowana biblioteka Chart.js 4.6.1. Znane adresy DemoShop są agregowane i wyświetlane jako polskie nazwy, a lokalne katalogi historycznych ścieżek nie są ujawniane. Pozostałe cztery sekcje nadal zawierają opisy przygotowywanych zestawień, bez fikcyjnych statystyk.
+
+Plik `dashboard/assets/vendor/chart.js-4.6.1/chart.umd.min.js` jest obsługiwany przez FastAPI przed skryptem Dashboardu. Aplikacja nie pobiera biblioteki z CDN podczas działania. Dołączony `LICENSE.md` zachowuje warunki licencji MIT Chart.js.
+
+Wspólny filtr `Od`–`Do` odświeża wszystkie elementy Przeglądu dla tego samego, włącznie traktowanego zakresu dni UTC. Puste pola oznaczają cały dostępny okres. Interfejs waliduje odwrócony zakres, pokazuje stany ładowania, błędu i braku danych oraz nie pozwala starszej odpowiedzi zastąpić wyniku nowszego filtrowania. Wygaśnięcie sesji podczas pobierania danych kieruje do logowania.
 
 Dokumenty HTML są publicznymi szkieletami i nie zawierają danych analitycznych. Po otwarciu panel pokazuje stan ładowania i sprawdza `/api/auth/status`; brak aktywnej sesji kieruje do logowania. Kontrola jest ponawiana przy powrocie do karty, zmianie sekcji i co minutę w widocznej karcie. Przycisk wylogowania korzysta z istniejącego `/api/auth/logout`. Błędy połączenia mają czytelne komunikaty, a kontrolę sesji można ponowić.
+
+Minutowa kontrola dotyczy wyłącznie ważności sesji właściciela. Nie pobiera ponownie danych analitycznych i nie odtwarza wykresów, gdy użytkownik pozostaje bezczynny. Dane Przeglądu są odświeżane po otwarciu sekcji, zmianie filtra albo ponownym wejściu do panelu.
 
 Żądania używają względnych adresów same-origin i ciasteczka `HttpOnly` z niezmienionym `Path=/api`. Dashboard nie zapisuje loginu, hasła ani tokenu w Local Storage lub Session Storage i nie korzysta ze śledzenia aktywności sklepu. Ochrona danych nadal działa na serwerze API.
 
@@ -197,7 +205,7 @@ W środowisku testowym z zainstalowanymi zależnościami backendu i biblioteką 
 python -m unittest discover -s tests -p test_auth.py -v
 ```
 
-Wszystkie testy, łącznie z integracją Dashboardu, uruchamia polecenie `python -m unittest discover -s tests -v`.
+Wszystkie testy backendu i integracji Dashboardu uruchamia polecenie `python -m unittest discover -s tests -v`. Pomocnicze funkcje interfejsu Przeglądu sprawdza `node --test tests/test_dashboard_ui.js`.
 
 Testy używają generowanych w pamięci danych i atrap konfiguracji oraz zapisu. Nie odczytują `.env` ani nie zapisują rekordów do Neon. Obejmują walidację bez ujawniania hasła, Unicode, równoczesne próby, limit i wygasanie wpisów, cookie, wylogowanie oraz ochronę API.
 
@@ -223,14 +231,15 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - historia ostatnich zdarzeń z kontrolowaną listą zwracanych pól;
 - lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt;
 - uwierzytelnianie jednego właściciela i ochrona API analitycznego;
-- strona logowania i responsywny szkielet Dashboardu z pięcioma działającymi sekcjami.
+- strona logowania i responsywny Dashboard z pięcioma działającymi sekcjami;
+- rzeczywiste KPI, wykres aktywności, rozkład zdarzeń, ranking stron i wspólny filtr dat w sekcji Przegląd.
 
 ## Planowany rozwój
 
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
-- prezentacja rzeczywistych danych w Dashboardzie;
-- wykresy aktywności, popularności stron i produktów;
+- prezentacja rzeczywistych danych w sekcjach Sesje, Strony i interakcje, Produkty oraz Zdarzenia;
+- wykresy i zestawienia szczegółowe popularności stron i produktów;
 - dalsze wskaźniki oraz wizualizacje dotyczące sesji;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
 - docelowa konfiguracja CORS i HTTPS dla adresów wdrożeniowych;
