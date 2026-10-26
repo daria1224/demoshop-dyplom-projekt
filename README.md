@@ -40,6 +40,8 @@ Frontend zapisuje zdarzenia również w konsoli przeglądarki, co ułatwia lokal
 - FastAPI i Pydantic;
 - Uvicorn;
 - psycopg 3;
+- Argon2 (`argon2-cffi`) do weryfikacji hasła właściciela;
+- `itsdangerous` do podpisywania czasowych ciasteczek sesyjnych;
 - PostgreSQL w usłudze Neon;
 - SQL i typ `JSONB` dla dodatkowych danych zdarzeń.
 
@@ -48,6 +50,7 @@ Frontend zapisuje zdarzenia również w konsoli przeglądarki, co ułatwia lokal
 ```text
 demoshop/
 ├── backend/
+│   ├── auth.py           # uwierzytelnianie właściciela i limiter logowania
 │   ├── database.py       # połączenie z PostgreSQL i zapytania SQL
 │   ├── main.py           # aplikacja FastAPI i endpointy
 │   └── schema.sql        # definicje tabel bazy danych
@@ -57,6 +60,8 @@ demoshop/
 ├── js/
 │   ├── main.js           # interakcje, koszyk i rejestrowanie zdarzeń
 │   └── products.js       # demonstracyjny katalog produktów
+├── tests/
+│   └── test_auth.py      # izolowane testy uwierzytelniania
 ├── about.html
 ├── cart.html
 ├── contact.html
@@ -86,9 +91,22 @@ Utwórz w katalogu głównym plik `.env`:
 
 ```dotenv
 DATABASE_URL=<adres_połączenia_PostgreSQL>
+OWNER_USERNAME=<nazwa_właściciela>
+OWNER_PASSWORD_HASH=<hash_Argon2_hasła>
+OWNER_SESSION_SECRET=<losowy_sekret_co_najmniej_32_znaki>
+OWNER_SESSION_TTL_SECONDS=1800
+AUTH_COOKIE_SECURE=false
+CORS_ALLOWED_ORIGINS=http://127.0.0.1:5500,http://localhost:5500
 ```
 
-Wstaw własny adres połączenia otrzymany od dostawcy PostgreSQL. Plik `.env` jest ignorowany przez Git i nie powinien być publikowany.
+Wstaw własny adres połączenia otrzymany od dostawcy PostgreSQL. Hash hasła można wygenerować lokalnie za pomocą `PasswordHasher` z biblioteki `argon2-cffi`; w konfiguracji zapisuje się wyłącznie wynik haszowania, nigdy jawne hasło. Sekret sesji powinien być losowy i niezależny od hasła. `AUTH_COOKIE_SECURE=false` jest dopuszczalne wyłącznie podczas pracy lokalnej przez HTTP — w środowisku HTTPS należy pozostawić wartość domyślną `true`. Opcjonalne `AUTH_ALLOWED_ORIGINS` jest potrzebne tylko dla zaufanego Dashboardu działającego w innym originie; zalecane jest obsługiwanie go przez ten sam serwer FastAPI. Plik `.env` jest ignorowany przez Git i nie powinien być publikowany.
+
+Przykładowe lokalne polecenia generujące hash i losowy sekret:
+
+```powershell
+python -c "from getpass import getpass; from argon2 import PasswordHasher; print(PasswordHasher().hash(getpass('Hasło właściciela: ')))"
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 
 Dla nowej bazy wykonaj polecenia z `backend/schema.sql`, na przykład w edytorze SQL Neon. Nie wykonuj ich ponownie na bazie, w której tabele już istnieją.
 
@@ -119,6 +137,9 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 | `GET` | `/` | Informacja o działaniu API |
 | `GET` | `/api/db-test` | Kontrola połączenia z PostgreSQL |
 | `POST` | `/api/events` | Walidacja i zapis pojedynczego zdarzenia |
+| `POST` | `/api/auth/login` | Logowanie właściciela i ustawienie ciasteczka sesyjnego |
+| `POST` | `/api/auth/logout` | Wylogowanie właściciela i usunięcie ciasteczka |
+| `GET` | `/api/auth/status` | Informacja o stanie uwierzytelnienia |
 | `GET` | `/api/analytics/summary` | Podstawowe liczniki zdarzeń i sesji |
 | `GET` | `/api/analytics/events` | Liczba zdarzeń według typu |
 | `GET` | `/api/analytics/products` | Wyświetlenia produktów i dodania do koszyka |
@@ -137,7 +158,27 @@ Endpointy `/api/analytics/recent-events` i `/api/analytics/funnel` również prz
 
 Lejek analizuje unikalne pary `(session_id, product_id)`. Para jest liczona jako wyświetlona po wystąpieniu `view_item`, a jako skonwertowana, gdy później w tej samej sesji wystąpi `add_to_cart` tego samego produktu. Kolejność wynika z `created_at`, a przy równych znacznikach czasu z `events.id`. Oba zdarzenia muszą należeć do wybranego zakresu dat, dlatego wynik dla wąskiego okresu nie przedstawia pełnej historycznej konwersji sesji. Wskaźnik nie oznacza rzeczywistych zakupów ani konwersji unikalnych użytkowników.
 
-Endpointy analityczne nie są jeszcze chronione autoryzacją i nie powinny być publicznie udostępniane w obecnym stanie.
+Wszystkie endpointy `/api/analytics/*` oraz diagnostyczny `/api/db-test` wymagają ważnej sesji właściciela. `POST /api/events` pozostaje publiczny, aby demonstracyjny sklep mógł rejestrować aktywność odwiedzających.
+
+Sesja logowania jest przechowywana w podpisanym ciasteczku `HttpOnly` z `SameSite=Strict`, ścieżką `/api` i ograniczonym czasem ważności. W HTTPS ciasteczko ma flagę `Secure`. Logowanie i wylogowanie sprawdzają nagłówek `Origin`, a błędne próby logowania podlegają prostemu limitowi w pamięci procesu.
+
+Logowanie przyjmuje JSON z polami `username` i `password`. Login obsługuje Unicode, w tym polskie znaki. Błędne dane uwierzytelniające zwracają `401`, niepoprawna struktura żądania zwraca `422` ze stałym komunikatem bez danych wejściowych, a niedozwolony lub brakujący `Origin` powoduje `403`. Brak wymaganej konfiguracji zamyka dostęp do analityki kodem `503`. Endpoint stanu zwraca `{"authenticated": false}` również wtedy, gdy konfiguracja jest niedostępna.
+
+Limiter dopuszcza łącznie najwyżej pięć nieudanych prób z ostatnich 15 minut i trwających weryfikacji na adres klienta. Rezerwacja jest atomowa w jednym procesie, a Argon2 działa poza blokadą. Po osiągnięciu limitu kolejne żądanie otrzymuje `429`. Poprawne logowanie zeruje wcześniejsze błędy, a wygasłe wpisy są usuwane przy następnej próbie. Limiter nie jest współdzielony między procesami.
+
+Sesja właściciela wygasa domyślnie po 30 minutach od logowania i nie jest automatycznie przedłużana aktywnością. Jest niezależna od pseudonimowej sesji odwiedzającego sklep. Wylogowanie usuwa ciasteczko z bieżącej przeglądarki; skopiowany token pozostaje ważny do wygaśnięcia. Zmiana sekretu podpisu unieważnia wszystkie sesje właściciela.
+
+Lokalne logowanie można sprawdzić przez `http://127.0.0.1:8000/docs`: wywołać `/api/auth/login`, następnie `/api/auth/status` i chronione API, a na końcu `/api/auth/logout`. Należy konsekwentnie używać tej samej nazwy hosta. Dashboard i formularz logowania nie są jeszcze zaimplementowane. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
+
+## Testy uwierzytelniania
+
+W środowisku testowym z zainstalowanymi zależnościami backendu i biblioteką `httpx` wymaganą przez FastAPI TestClient uruchom:
+
+```powershell
+python -m unittest discover -s tests -p test_auth.py -v
+```
+
+Testy używają generowanych w pamięci danych i atrap konfiguracji oraz zapisu. Nie odczytują `.env` ani nie zapisują rekordów do Neon. Obejmują walidację bez ujawniania hasła, Unicode, równoczesne próby, limit i wygasanie wpisów, cookie, wylogowanie oraz ochronę API.
 
 ## Pseudonimowa sesja
 
@@ -159,18 +200,18 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - statystyki sesji: liczba sesji, średnia i mediana czasu aktywności, sesje z jednym zdarzeniem oraz średnia liczba zdarzeń;
 - ranking kliknięć grupowany według elementu, strony i opcjonalnego celu;
 - historia ostatnich zdarzeń z kontrolowaną listą zwracanych pól;
-- lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt.
+- lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt;
+- uwierzytelnianie jednego właściciela i ochrona API analitycznego.
 
 ## Planowany rozwój
 
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
 - osobny Dashboard analityczny;
-- autoryzacja właściciela i ochrona wszystkich endpointów analitycznych;
 - wykresy aktywności, popularności stron i produktów;
 - dalsze wskaźniki oraz wizualizacje dotyczące sesji;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
-- bezpieczna konfiguracja CORS dla docelowych adresów;
+- docelowa konfiguracja CORS i HTTPS dla adresów wdrożeniowych;
 - wdrożenie backendu i frontendu w środowisku chmurowym.
 
 Projekt nie jest obecnie przedstawiany jako wdrożony produkcyjnie.

@@ -1,8 +1,32 @@
 from datetime import date, datetime, timezone
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
+
+from backend.auth import (
+    authenticate_owner,
+    authentication_status,
+    create_session_cookie,
+    delete_session_cookie,
+    finish_login_attempt,
+    get_auth_settings,
+    get_cors_origins,
+    reserve_login_attempt,
+    require_owner,
+    require_trusted_origin,
+)
 
 from backend.database import (
     check_database_connection,
@@ -20,11 +44,28 @@ from backend.database import (
 
 app = FastAPI()
 
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation(request: Request, error: RequestValidationError):
+    if request.url.path.rstrip("/") == "/api/auth/login":
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Nieprawidłowa struktura danych logowania."},
+        )
+    return await request_validation_exception_handler(request, error)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_origins=get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
+)
+
+analytics_router = APIRouter(
+    prefix="/api/analytics",
+    dependencies=[Depends(require_owner)],
 )
 
 
@@ -46,18 +87,23 @@ class Event(BaseModel):
         extra = "allow"
 
 
+class OwnerLogin(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=500)
+
+
 @app.get("/")
 def read_root():
     return {"message": "DemoShop API działa"}
 
 
-@app.get("/api/db-test")
+@app.get("/api/db-test", dependencies=[Depends(require_owner)])
 def test_database_connection():
     connected, message = check_database_connection()
     return {"connected": connected, "message": message}
 
 
-@app.get("/api/analytics/summary")
+@analytics_router.get("/summary")
 def get_summary():
     try:
         return get_analytics_summary()
@@ -68,7 +114,7 @@ def get_summary():
         )
 
 
-@app.get("/api/analytics/events")
+@analytics_router.get("/events")
 def get_analytics_events():
     try:
         return get_events_by_type()
@@ -79,7 +125,7 @@ def get_analytics_events():
         )
 
 
-@app.get("/api/analytics/products")
+@analytics_router.get("/products")
 def get_analytics_products():
     try:
         return get_product_analytics()
@@ -98,7 +144,7 @@ def validate_date_range(date_from: date | None, date_to: date | None) -> None:
         )
 
 
-@app.get("/api/analytics/activity")
+@analytics_router.get("/activity")
 def get_analytics_activity(
     date_from: date | None = None,
     date_to: date | None = None,
@@ -114,7 +160,7 @@ def get_analytics_activity(
         )
 
 
-@app.get("/api/analytics/pages")
+@analytics_router.get("/pages")
 def get_analytics_pages(
     date_from: date | None = None,
     date_to: date | None = None,
@@ -130,8 +176,8 @@ def get_analytics_pages(
         )
 
 
-@app.get(
-    "/api/analytics/sessions",
+@analytics_router.get(
+    "/sessions",
     summary="Statystyki sesji",
     description=(
         "Filtry date_from i date_to wybierają zdarzenia z włącznego zakresu "
@@ -155,8 +201,8 @@ def get_analytics_sessions(
         )
 
 
-@app.get(
-    "/api/analytics/clicks",
+@analytics_router.get(
+    "/clicks",
     summary="Ranking klikanych elementów",
     description=(
         "Zwraca wyłącznie zdarzenia click, pogrupowane według elementu, "
@@ -179,8 +225,8 @@ def get_analytics_clicks(
         )
 
 
-@app.get(
-    "/api/analytics/recent-events",
+@analytics_router.get(
+    "/recent-events",
     summary="Historia ostatnich zdarzeń",
     description=(
         "Zwraca najnowsze zdarzenia z bezpiecznym podzbiorem pól. "
@@ -207,8 +253,8 @@ def get_analytics_recent_events(
         )
 
 
-@app.get(
-    "/api/analytics/funnel",
+@analytics_router.get(
+    "/funnel",
     summary="Lejek interakcji z produktami",
     description=(
         "Jednostką analizy jest para sesja-produkt. Konwersja oznacza "
@@ -231,6 +277,45 @@ def get_analytics_funnel(
             status_code=500,
             detail="Nie udało się pobrać lejka produktów.",
         )
+
+
+app.include_router(analytics_router)
+
+
+@app.post("/api/auth/login")
+def login_owner(credentials: OwnerLogin, request: Request, response: Response):
+    require_trusted_origin(request)
+    reservation = reserve_login_attempt(request)
+
+    failed = False
+    succeeded = False
+    try:
+        settings = authenticate_owner(credentials.username, credentials.password)
+        succeeded = True
+    except HTTPException as error:
+        failed = error.status_code == 401
+        raise
+    finally:
+        finish_login_attempt(reservation, failed=failed, succeeded=succeeded)
+
+    create_session_cookie(response, settings)
+    return {"authenticated": True}
+
+
+@app.post("/api/auth/logout")
+def logout_owner(
+    request: Request,
+    response: Response,
+    _owner: str = Depends(require_owner),
+):
+    require_trusted_origin(request)
+    delete_session_cookie(response, get_auth_settings())
+    return {"authenticated": False}
+
+
+@app.get("/api/auth/status")
+def get_owner_authentication_status(request: Request):
+    return {"authenticated": authentication_status(request)}
 
 
 @app.post("/api/events")

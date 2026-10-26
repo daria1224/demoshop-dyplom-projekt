@@ -17,12 +17,12 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - zapis w relacyjnej bazie danych;
 - agregacje zdarzeń, produktów, aktywności dziennej i odsłon stron;
 - statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
-- opcjonalne filtry dat dla zestawień analitycznych.
+- opcjonalne filtry dat dla zestawień analitycznych;
+- uwierzytelnianie jednego właściciela i ochrona API analitycznego.
 
 ### Funkcjonalności planowane w ramach pracy dyplomowej
 
 - Dashboard analityczny;
-- autoryzacja właściciela;
 - rozbudowana analityka, filtry i wizualizacje;
 - wdrożenie systemu w środowisku chmurowym.
 
@@ -53,7 +53,11 @@ Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą
 
 ### 3.5. Planowany Dashboard
 
-Dashboard nie istnieje w aktualnej wersji. Ma być osobnym, chronionym interfejsem prezentującym dane z `/api/analytics/*`. Przed publicznym udostępnieniem wszystkie endpointy analityczne muszą wymagać autoryzacji właściciela.
+Dashboard nie istnieje w aktualnej wersji. Ma być osobnym interfejsem prezentującym chronione dane z `/api/analytics/*`. Preferowane jest udostępnienie Dashboardu przez ten sam origin co FastAPI, aby nie rozszerzać CORS i nie przesyłać ciasteczka między witrynami.
+
+### 3.6. Uwierzytelnianie właściciela
+
+`backend/auth.py` realizuje uwierzytelnianie jednego właściciela bez tabel kont. Nazwa właściciela, hash Argon2 hasła oraz sekret podpisu znajdują się w zmiennych środowiskowych. Po poprawnym logowaniu backend ustawia podpisane, czasowe ciasteczko `HttpOnly`. Wspólna zależność routera chroni wszystkie `/api/analytics/*`, a osobna zależność chroni `/api/db-test`.
 
 ## 4. Przepływ danych
 
@@ -148,6 +152,9 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 | `GET` | `/` | istnieje | komunikat kontrolny API |
 | `GET` | `/api/db-test` | istnieje | informacja o połączeniu z bazą |
 | `POST` | `/api/events` | istnieje | walidacja i zapis zdarzenia |
+| `POST` | `/api/auth/login` | istnieje | weryfikacja właściciela i utworzenie sesji |
+| `POST` | `/api/auth/logout` | istnieje | usunięcie ciasteczka sesyjnego |
+| `GET` | `/api/auth/status` | istnieje | stan uwierzytelnienia właściciela |
 | `GET` | `/api/analytics/summary` | istnieje | podstawowe liczniki |
 | `GET` | `/api/analytics/events` | istnieje | liczba zdarzeń według typu |
 | `GET` | `/api/analytics/products` | istnieje | widoki i dodania produktów |
@@ -246,17 +253,29 @@ Jeżeli zastosowano daty, zarówno `view_item`, jak i późniejsze `add_to_cart`
 - wizualizacja istniejącego współczynnika przejścia od wyświetlenia produktu do dodania do koszyka;
 - filtry według dat, strony, typu zdarzenia i produktu.
 
-## 11. Autoryzacja właściciela
+## 11. Uwierzytelnianie właściciela
 
-Aktualne endpointy analityczne nie wymagają logowania. Przed publicznym wdrożeniem system musi:
+- `OWNER_USERNAME` określa nazwę jedynego właściciela;
+- `OWNER_PASSWORD_HASH` zawiera hash Argon2, nigdy hasło jawne;
+- `OWNER_SESSION_SECRET` jest niezależnym, losowym sekretem podpisu o długości co najmniej 32 znaków;
+- `OWNER_SESSION_TTL_SECONDS` określa ważność od 5 minut do 24 godzin, domyślnie 30 minut;
+- `AUTH_COOKIE_SECURE` domyślnie włącza flagę `Secure`; wartość `false` służy wyłącznie lokalnemu HTTP;
+- `CORS_ALLOWED_ORIGINS` zawiera jawne originy publicznego frontendu i nie dopuszcza `*`;
+- opcjonalne `AUTH_ALLOWED_ORIGINS` osobno dopuszcza zaufany origin interfejsu właściciela, gdy nie działa on same-origin.
 
-- uwierzytelniać właściciela panelu;
-- sprawdzać uprawnienia przy każdym `/api/analytics/*`;
-- nie przechowywać sekretów uwierzytelniających w repozytorium;
-- używać bezpiecznych ciasteczek lub tokenów odpowiednich dla wybranej architektury;
-- ograniczać dostęp do danych i operacji administracyjnych.
+Hasło jest weryfikowane przez `argon2-cffi`. Login jest porównywany przez `secrets.compare_digest()` na bajtach UTF-8, zarówno przy logowaniu, jak i przy sprawdzaniu właściciela sesji. Obsługuje to również polskie znaki. Po zalogowaniu `itsdangerous` podpisuje dane sesji i dodaje znacznik czasu. Ciasteczko ma `HttpOnly`, `SameSite=Strict`, ścieżkę `/api`, ograniczony `Max-Age` oraz w HTTPS flagę `Secure`. Ważność jest liczona od logowania i nie jest automatycznie przedłużana. Logowanie i wylogowanie wymagają dozwolonego nagłówka `Origin`; domyślnie dopuszczony jest origin bieżącego API. Publiczne originy CORS nie są automatycznie dopuszczane do logowania.
 
-Wybór konkretnej metody autoryzacji pozostaje elementem planowanego rozwoju.
+`POST /api/auth/login` przyjmuje JSON z polami `username` i `password`. Błędy danych uwierzytelniających zwracają 401 ze wspólnym komunikatem. Błędy walidacji tej trasy, w tym niepoprawny typ, struktura lub JSON, zwracają 422 ze stałym komunikatem bez pola `input`, treści żądania ani hasła. Obsługa walidacji pozostałych endpointów pozostaje standardowa. Kod aplikacji nie loguje danych logowania.
+
+Limiter atomowo rezerwuje próbę pod blokadą w jednym procesie. Suma nieudanych prób zakończonych w ostatnich 15 minutach i trwających weryfikacji z danego adresu klienta nie może przekroczyć pięciu. Kolejna próba otrzymuje 429 z `Retry-After`. Kosztowna weryfikacja Argon2 odbywa się poza blokadą. Rezerwacja jest zwalniana w `finally`: niepoprawne dane pozostawiają wpis błędu z czasem zakończenia, sukces usuwa wcześniejsze błędy, a błąd konfiguracji zwalnia miejsce bez naliczania nieudanej próby. Sukces nie usuwa rezerwacji innych trwających żądań. Wygasłe wpisy wszystkich adresów są usuwane podczas rezerwowania kolejnej próby; nie działa osobny proces sprzątający.
+
+Sesja jest bezstanowa: serwer weryfikuje podpis, wiek i właściciela bez zapisywania tokenu w bazie. Wylogowanie usuwa ciasteczko z bieżącej przeglądarki, lecz przechwyconej kopii poprawnie podpisanego tokenu nie można centralnie unieważnić przed upływem czasu ważności. Zmiana `OWNER_SESSION_SECRET` unieważnia wszystkie aktywne sesje. Limiter prób jest przechowywany w pamięci procesu, więc przy wielu instancjach wymagałby współdzielonego magazynu.
+
+Brak poprawnej konfiguracji zwraca 503 i nie otwiera dostępu do analityki. Brak lub nieważna sesja zwraca 401. `POST /api/events` pozostaje publiczny, natomiast `/api/db-test` wymaga sesji właściciela.
+
+`GET /api/auth/status` zwraca wyłącznie `authenticated`: brak, wygaśnięcie lub niepoprawność sesji, a także brak konfiguracji dają wartość `false`. Mechanizm właściciela jest niezależny od 30-minutowego limitu bezczynności pseudonimowych sesji sklepu. System nie zawiera rejestracji, ról, odzyskiwania haseł ani kont klientów.
+
+Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.env` oraz nie łączą się z Neon. Sprawdzają logowanie, błędy walidacji, Unicode, współbieżne rezerwacje, odpowiedzi 429, usuwanie wygasłych wpisów, zwalnianie rezerwacji po błędzie konfiguracji, cookie, wylogowanie i ochronę tras.
 
 ## 12. Bezpieczeństwo i ochrona danych
 
@@ -267,12 +286,14 @@ Wybór konkretnej metody autoryzacji pozostaje elementem planowanego rozwoju.
 - identyfikator sesji jest pseudonimowy, nie zawiera danych bezpośrednio identyfikujących osobę, ale nie gwarantuje pełnej anonimowości;
 - formularz kontaktowy nie przesyła treści wiadomości ani danych kontaktowych do analityki;
 - błędy API nie ujawniają adresu połączenia z bazą;
-- czas jest zapisywany jako `TIMESTAMPTZ` i normalizowany do UTC.
+- czas jest zapisywany jako `TIMESTAMPTZ` i normalizowany do UTC;
+- odpowiedzi błędów logowania nie ujawniają, czy błędna była nazwa, czy hasło;
+- operacje logowania i wylogowania sprawdzają `Origin`, a ciasteczko używa `SameSite=Strict`.
 
-Przed wdrożeniem wymagane są dodatkowo autoryzacja, ograniczenie CORS do znanych adresów, HTTPS, limity żądań, monitoring błędów i przegląd zasad retencji danych.
+Przed wdrożeniem wymagane są dodatkowo HTTPS, ustawienie docelowych originów, trwały limiter odpowiedni dla liczby instancji, monitoring błędów i przegląd zasad retencji danych.
 
 ## 13. Możliwość wdrożenia chmurowego
 
-Backend może zostać później uruchomiony na platformie obsługującej Python i zmienne środowiskowe, a frontend na hostingu statycznym. Adres API frontendu, CORS, sekrety, HTTPS i autoryzacja będą wymagały konfiguracji właściwej dla wybranego środowiska.
+Backend może zostać później uruchomiony na platformie obsługującej Python i zmienne środowiskowe, a frontend na hostingu statycznym. Adres API frontendu, CORS, sekrety i HTTPS będą wymagały konfiguracji właściwej dla wybranego środowiska.
 
 Repozytorium nie zawiera obecnie Dockerfile, Terraform ani konfiguracji konkretnej platformy. Projekt nie został jeszcze opisany jako wdrożony produkcyjnie.
