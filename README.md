@@ -183,7 +183,7 @@ Sesja właściciela wygasa domyślnie po 30 minutach od logowania i nie jest aut
 
 Lokalne logowanie można sprawdzić przez `/dashboard/login` albo Swagger UI. Formularz wysyła dane do `/api/auth/login`, a po sukcesie przechodzi do `/dashboard`. Należy konsekwentnie używać tej samej nazwy hosta. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
 
-## Dashboard — etapy 2–5
+## Dashboard — etapy 2–6
 
 Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcja Przegląd prezentuje rzeczywiste dane z chronionego API: sześć kart KPI, liniowy wykres aktywności oraz poziome wykresy typów zdarzeń i sześciu najpopularniejszych stron. Wykresy tworzy lokalna, wersjonowana biblioteka Chart.js 4.6.1. Znane adresy DemoShop są agregowane i wyświetlane jako polskie nazwy, a lokalne katalogi historycznych ścieżek nie są ujawniane.
 
@@ -191,11 +191,13 @@ Sekcja Sesje korzysta z `/api/analytics/sessions` i prezentuje liczbę sesji, ś
 
 Sekcja Strony i interakcje pobiera równolegle `/api/analytics/pages` i `/api/analytics/clicks`. Pokazuje łączną liczbę odsłon i kliknięć, poziomy wykres popularności stron oraz tabelę najczęstszych interakcji z nazwą strony, elementem, celem i liczbą kliknięć. Współdzieli normalizację ścieżek z Przeglądem, agreguje równoważne adresy i nie ujawnia ścieżek lokalnego systemu plików. Tabela domyślnie pokazuje dziesięć pozycji i pozwala rozwinąć pełny ranking.
 
-Sekcja Produkty pobiera równolegle `/api/analytics/products` i `/api/analytics/funnel`. Pokazuje liczbę zdarzeń `view_item` i `add_to_cart`, dwa niezależne rankingi oraz dwustopniowy lejek unikalnych par sesja–produkt. Wartości zdarzeń nie są utożsamiane z parami lejka. Tabela lejka prezentuje wyświetlone i skonwertowane pary oraz współczynnik przejścia dla każdego produktu. Sekcja Zdarzenia nadal zawiera opis przygotowywanego zestawienia, bez fikcyjnych statystyk.
+Sekcja Produkty pobiera równolegle `/api/analytics/products` i `/api/analytics/funnel`. Pokazuje liczbę zdarzeń `view_item` i `add_to_cart`, dwa niezależne rankingi oraz dwustopniowy lejek unikalnych par sesja–produkt. Wartości zdarzeń nie są utożsamiane z parami lejka. Tabela lejka prezentuje wyświetlone i skonwertowane pary oraz współczynnik przejścia dla każdego produktu.
+
+Sekcja Zdarzenia pobiera `/api/analytics/recent-events` i przedstawia najnowsze wpisy w tabeli. Typy zdarzeń i znane strony otrzymują polskie etykiety, czas jest wyświetlany jawnie w UTC, a szczegóły ograniczają się do bezpiecznej nazwy produktu albo elementu interfejsu. Filtr obejmuje włączne dni UTC i pozwala wybrać 20, 50 lub 100 rekordów. Tabela nie pokazuje tokenów sesji, cookies, pełnych metadanych ani lokalnych ścieżek systemowych.
 
 Plik `dashboard/assets/vendor/chart.js-4.6.1/chart.umd.min.js` jest obsługiwany przez FastAPI przed skryptem Dashboardu. Aplikacja nie pobiera biblioteki z CDN podczas działania. Dołączony `LICENSE.md` zachowuje warunki licencji MIT Chart.js.
 
-Filtry `Od`–`Do` w sekcjach Przegląd, Sesje, Strony i interakcje oraz Produkty wykorzystują włącznie traktowane zakresy dni UTC. Puste pola oznaczają cały dostępny okres. W sekcji Sesje statystyki są liczone wyłącznie ze zdarzeń mieszczących się w zakresie, więc mogą opisywać tylko fragment historycznej aktywności sesji. Interfejs waliduje odwrócony zakres, pokazuje stany ładowania, błędu i braku danych oraz nie pozwala starszej odpowiedzi zastąpić wyniku nowszego filtrowania. Wygaśnięcie sesji podczas pobierania danych kieruje do logowania.
+Filtry `Od`–`Do` we wszystkich pięciu sekcjach wykorzystują włącznie traktowane zakresy dni UTC. Puste pola oznaczają cały dostępny okres. W sekcji Sesje statystyki są liczone wyłącznie ze zdarzeń mieszczących się w zakresie, więc mogą opisywać tylko fragment historycznej aktywności sesji. Interfejs waliduje odwrócony zakres, pokazuje stany ładowania, błędu i braku danych oraz nie pozwala starszej odpowiedzi zastąpić wyniku nowszego filtrowania. Wygaśnięcie sesji podczas pobierania danych kieruje do logowania.
 
 Dokumenty HTML są publicznymi szkieletami i nie zawierają danych analitycznych. Po otwarciu panel pokazuje stan ładowania i sprawdza `/api/auth/status`; brak aktywnej sesji kieruje do logowania. Kontrola jest ponawiana przy powrocie do karty, zmianie sekcji i co minutę w widocznej karcie. Przycisk wylogowania korzysta z istniejącego `/api/auth/logout`. Błędy połączenia mają czytelne komunikaty, a kontrolę sesji można ponowić.
 
@@ -242,12 +244,12 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - rzeczywiste wskaźniki sesji, udział sesji z jednym zdarzeniem i osobny filtr dat w sekcji Sesje.
 - rzeczywiste KPI odsłon i kliknięć, wykres popularności stron oraz ranking interakcji w sekcji Strony i interakcje.
 - rzeczywiste liczniki produktów, rankingi i lejek par sesja–produkt w sekcji Produkty.
+- tabela ostatnich zdarzeń z polskimi etykietami, czasem UTC, limitem wyników i filtrem dat w sekcji Zdarzenia.
 
 ## Planowany rozwój
 
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
-- prezentacja rzeczywistych danych w sekcji Zdarzenia;
 - ewentualne dalsze wizualizacje sesji, jeśli backend zostanie rozszerzony o odpowiednie dane;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
 - docelowa konfiguracja CORS i HTTPS dla adresów wdrożeniowych;

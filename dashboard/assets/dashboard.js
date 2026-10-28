@@ -66,6 +66,14 @@ const eventLabels = {
   form_submit: 'Wysłania formularza'
 };
 
+const recentEventLabels = {
+  page_view: 'Wyświetlenie strony',
+  click: 'Kliknięcie',
+  view_item: 'Wyświetlenie produktu',
+  add_to_cart: 'Dodanie do koszyka',
+  form_submit: 'Wysłanie formularza'
+};
+
 const numberFormatter = new Intl.NumberFormat('pl-PL');
 const chartInstances = {};
 const pageDefinitions = {
@@ -249,6 +257,76 @@ function getPagesAndClicksTotals(pages, clicks) {
 
 function getVisibleClickRows(rows, expanded = false) {
   return expanded ? rows : rows.slice(0, 10);
+}
+
+function buildRecentEventsQuery(dateFrom = '', dateTo = '', limit = 20) {
+  const parameters = new URLSearchParams();
+  if (dateFrom) parameters.set('date_from', dateFrom);
+  if (dateTo) parameters.set('date_to', dateTo);
+  parameters.set('limit', String(limit));
+  return `?${parameters.toString()}`;
+}
+
+function formatUtcTimestamp(value) {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return 'Nieprawidłowy czas';
+  const formatted = new Intl.DateTimeFormat('pl-PL', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).format(timestamp);
+  return `${formatted} UTC`;
+}
+
+function formatEventCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  const lastTwoDigits = count % 100;
+  const lastDigit = count % 10;
+  const noun = count === 1
+    ? 'zdarzenie'
+    : lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14)
+      ? 'zdarzenia'
+      : 'zdarzeń';
+  return `${formatNumber(count)} ${noun}`;
+}
+
+function formatRecentEventDetails(row) {
+  const productName = typeof row.product_name === 'string' ? row.product_name.trim() : '';
+  if (productName) return `Produkt: ${productName}`;
+  if (row.element) return `Element: ${formatInteractionElement(row.element)}`;
+  if (row.product_id) return 'Produkt (brak nazwy)';
+  return '—';
+}
+
+function prepareRecentEventRows(rows) {
+  const unknownPageKeys = [...new Set(rows
+    .map(row => normalizeDemoShopPage(row.page))
+    .filter(page => !page.label)
+    .map(page => page.key))].sort((first, second) => first.localeCompare(second));
+  const unknownPageLabels = new Map(unknownPageKeys.map((key, index) => [
+    key,
+    unknownPageKeys.length === 1 ? 'Inna strona' : `Inna strona ${index + 1}`
+  ]));
+  return rows.map(row => {
+    const timestampValue = new Date(row.timestamp).getTime();
+    const page = normalizeDemoShopPage(row.page);
+    return {
+      eventId: Number(row.event_id) || 0,
+      timestampValue: Number.isNaN(timestampValue) ? Number.NEGATIVE_INFINITY : timestampValue,
+      timestamp: formatUtcTimestamp(row.timestamp),
+      eventType: recentEventLabels[row.event_type] || 'Inny rodzaj zdarzenia',
+      page: page.label || unknownPageLabels.get(page.key) || 'Inna strona',
+      details: formatRecentEventDetails(row)
+    };
+  }).sort((first, second) => (
+    second.timestampValue - first.timestampValue
+    || second.eventId - first.eventId
+  ));
 }
 
 function buildActivityChartConfig(rows) {
@@ -550,6 +628,11 @@ async function loadProductAnalytics(filters, request = authRequest, signal) {
   return { products, funnel };
 }
 
+async function loadRecentEvents(filters, request = authRequest, signal) {
+  const query = buildRecentEventsQuery(filters.dateFrom, filters.dateTo, filters.limit);
+  return request(`/api/analytics/recent-events${query}`, { signal });
+}
+
 async function authRequest(path, options = {}) {
   const controller = new AbortController();
   const externalSignal = options.signal;
@@ -837,6 +920,33 @@ function renderProductAnalytics(data) {
   return { totals, funnel };
 }
 
+function renderRecentEvents(rows) {
+  const preparedRows = prepareRecentEventRows(rows);
+  const body = document.querySelector('#recent-events-body');
+  body.replaceChildren();
+  preparedRows.forEach(event => {
+    const row = document.createElement('tr');
+    const timestamp = document.createElement('td');
+    timestamp.textContent = event.timestamp;
+    const type = document.createElement('td');
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'event-type-label';
+    typeLabel.textContent = event.eventType;
+    type.append(typeLabel);
+    const page = document.createElement('td');
+    page.textContent = event.page;
+    const details = document.createElement('td');
+    details.textContent = event.details;
+    if (event.details === '—') {
+      details.className = 'event-detail-muted';
+    }
+    row.append(timestamp, type, page, details);
+    body.append(row);
+  });
+  document.querySelector('#recent-events-count').textContent = formatEventCount(preparedRows.length);
+  return preparedRows;
+}
+
 function renderActivity(rows) {
   const summary = document.querySelector('#activity-summary');
   const total = rows.reduce((sum, row) => sum + (Number(row.event_count) || 0), 0);
@@ -909,6 +1019,7 @@ function setupDashboard() {
   const sessionsPanel = document.querySelector('#sessions-panel');
   const pagesPanel = document.querySelector('#pages-panel');
   const productsPanel = document.querySelector('#products-panel');
+  const recentEventsPanel = document.querySelector('#recent-events-panel');
   const placeholderPanel = document.querySelector('#section-panel');
   const filterForm = document.querySelector('#date-filter');
   const dateFrom = document.querySelector('#date-from');
@@ -942,6 +1053,15 @@ function setupDashboard() {
   const productsError = document.querySelector('#products-error');
   const productsEmpty = document.querySelector('#products-empty');
   const productsContent = document.querySelector('#products-content');
+  const recentEventsFilterForm = document.querySelector('#recent-events-filter');
+  const recentEventsDateFrom = document.querySelector('#recent-events-date-from');
+  const recentEventsDateTo = document.querySelector('#recent-events-date-to');
+  const recentEventsLimit = document.querySelector('#recent-events-limit');
+  const recentEventsFilterError = document.querySelector('#recent-events-filter-error');
+  const recentEventsLoading = document.querySelector('#recent-events-loading');
+  const recentEventsError = document.querySelector('#recent-events-error');
+  const recentEventsEmpty = document.querySelector('#recent-events-empty');
+  const recentEventsContent = document.querySelector('#recent-events-content');
   let checking = false;
   let authenticated = false;
   let overviewController = null;
@@ -952,6 +1072,8 @@ function setupDashboard() {
   let pagesRequestId = 0;
   let productsController = null;
   let productsRequestId = 0;
+  let recentEventsController = null;
+  let recentEventsRequestId = 0;
   let clickRows = [];
   let interactionsExpanded = false;
 
@@ -1157,6 +1279,65 @@ function setupDashboard() {
     }
   }
 
+  function showRecentEventsState(state) {
+    recentEventsLoading.hidden = state !== 'loading';
+    recentEventsError.hidden = state !== 'error';
+    recentEventsEmpty.hidden = state !== 'empty';
+    recentEventsContent.hidden = state !== 'content';
+  }
+
+  async function refreshRecentEvents() {
+    if (!authenticated || window.location.hash !== '#events') return;
+    const validationError = validateDateRange(
+      recentEventsDateFrom.value,
+      recentEventsDateTo.value
+    );
+    recentEventsFilterError.hidden = !validationError;
+    recentEventsFilterError.textContent = validationError;
+    if (validationError) return;
+
+    if (recentEventsController) recentEventsController.abort();
+    recentEventsController = new AbortController();
+    const requestId = ++recentEventsRequestId;
+    showRecentEventsState('loading');
+    recentEventsFilterForm.querySelectorAll('button, select').forEach(control => {
+      control.disabled = true;
+    });
+    try {
+      const rows = await loadRecentEvents(
+        {
+          dateFrom: recentEventsDateFrom.value,
+          dateTo: recentEventsDateTo.value,
+          limit: Number(recentEventsLimit.value)
+        },
+        authRequest,
+        recentEventsController.signal
+      );
+      if (requestId !== recentEventsRequestId) return;
+      if (!rows.length) {
+        showRecentEventsState('empty');
+        return;
+      }
+      renderRecentEvents(rows);
+      showRecentEventsState('content');
+    } catch (error) {
+      if (requestId !== recentEventsRequestId || error.name === 'AbortError') return;
+      if (error.status === 401) {
+        authenticated = false;
+        shell.hidden = true;
+        goToLogin();
+        return;
+      }
+      showRecentEventsState('error');
+    } finally {
+      if (requestId === recentEventsRequestId) {
+        recentEventsFilterForm.querySelectorAll('button, select').forEach(control => {
+          control.disabled = false;
+        });
+      }
+    }
+  }
+
   function showSection(moveFocus = false) {
     const requested = window.location.hash.slice(1);
     const key = Object.hasOwn(sections, requested) ? requested : 'overview';
@@ -1172,7 +1353,8 @@ function setupDashboard() {
     sessionsPanel.hidden = key !== 'sessions';
     pagesPanel.hidden = key !== 'pages';
     productsPanel.hidden = key !== 'products';
-    placeholderPanel.hidden = ['overview', 'sessions', 'pages', 'products'].includes(key);
+    recentEventsPanel.hidden = key !== 'events';
+    placeholderPanel.hidden = ['overview', 'sessions', 'pages', 'products', 'events'].includes(key);
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
@@ -1198,6 +1380,7 @@ function setupDashboard() {
     if (key === 'sessions' && authenticated) refreshSessions();
     if (key === 'pages' && authenticated) refreshPages();
     if (key === 'products' && authenticated) refreshProducts();
+    if (key === 'events' && authenticated) refreshRecentEvents();
   }
 
   async function checkSession() {
@@ -1303,6 +1486,17 @@ function setupDashboard() {
     refreshProducts();
   });
   document.querySelector('#products-retry').addEventListener('click', refreshProducts);
+  recentEventsFilterForm.addEventListener('submit', event => {
+    event.preventDefault();
+    refreshRecentEvents();
+  });
+  document.querySelector('#recent-events-clear-filter').addEventListener('click', () => {
+    recentEventsDateFrom.value = '';
+    recentEventsDateTo.value = '';
+    recentEventsFilterError.hidden = true;
+    refreshRecentEvents();
+  });
+  document.querySelector('#recent-events-retry').addEventListener('click', refreshRecentEvents);
   window.addEventListener('hashchange', () => {
     showSection(true);
     checkSession();
@@ -1332,6 +1526,7 @@ if (typeof module !== 'undefined' && module.exports) {
     aggregatePageViews,
     buildActivityChartConfig,
     buildDateQuery,
+    buildRecentEventsQuery,
     buildEventsChartConfig,
     buildPagesChartConfig,
     buildPagesDetailChartConfig,
@@ -1344,17 +1539,22 @@ if (typeof module !== 'undefined' && module.exports) {
     formatDuration,
     formatInteractionElement,
     formatInteractionTarget,
+    formatEventCount,
+    formatRecentEventDetails,
+    formatUtcTimestamp,
     getPagesAndClicksTotals,
     getVisibleClickRows,
     hasSessionData,
     loadOverviewAnalytics,
     loadPagesAnalytics,
     loadProductAnalytics,
+    loadRecentEvents,
     loadSessionAnalytics,
     needsDashboardRender,
     normalizeDemoShopPage,
     prepareClickRows,
     prepareProductRows,
+    prepareRecentEventRows,
     buildProductRankings,
     getProductEventTotals,
     normalizeFunnelData,

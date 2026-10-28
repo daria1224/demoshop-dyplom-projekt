@@ -388,6 +388,75 @@ class DashboardTests(unittest.TestCase):
                     self.assertNotIn("AT TIME ZONE 'UTC'", query)
                 connection.close.assert_called_once()
 
+    def test_recent_events_contract_filters_limits_and_dashboard_markup(self):
+        self.login()
+        payload = [{
+            "event_id": 17,
+            "timestamp": "2026-05-03T10:15:30Z",
+            "event_type": "view_item",
+            "page": "/product.html",
+            "element": "view_product_button",
+            "product_id": "kubek-aurora",
+            "product_name": "Kubek Aurora",
+        }]
+        with patch.object(main, "get_recent_events", return_value=payload) as query:
+            response = self.client.get(
+                "/api/analytics/recent-events",
+                params={
+                    "date_from": "2026-05-01",
+                    "date_to": "2026-05-03",
+                    "limit": 50,
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), payload)
+        arguments = query.call_args.kwargs
+        self.assertEqual(arguments["date_from"].isoformat(), "2026-05-01")
+        self.assertEqual(arguments["date_to"].isoformat(), "2026-05-03")
+        self.assertEqual(arguments["limit"], 50)
+
+        for limit in (20, 50, 100):
+            with self.subTest(limit=limit):
+                with patch.object(main, "get_recent_events", return_value=[]):
+                    response = self.client.get(
+                        "/api/analytics/recent-events",
+                        params={"limit": limit},
+                    )
+                self.assertEqual(response.status_code, 200)
+
+        for invalid_limit in (0, 101):
+            response = self.client.get(
+                "/api/analytics/recent-events",
+                params={"limit": invalid_limit},
+            )
+            self.assertEqual(response.status_code, 422)
+
+        invalid_range = self.client.get(
+            "/api/analytics/recent-events",
+            params={"date_from": "2026-05-04", "date_to": "2026-05-03"},
+        )
+        self.assertEqual(invalid_range.status_code, 422)
+
+        page = self.client.get("/dashboard")
+        for marker in (
+            'id="recent-events-panel"',
+            'id="recent-events-filter"',
+            'id="recent-events-limit"',
+            'id="recent-events-body"',
+            'id="recent-events-loading"',
+            'id="recent-events-empty"',
+            'id="recent-events-error"',
+        ):
+            self.assertIn(marker, page.text)
+        for label in (
+            "Data i godzina (UTC)",
+            "Rodzaj zdarzenia",
+            "Strona",
+            "Szczegóły",
+        ):
+            self.assertIn(label, page.text)
+        self.assertNotIn("session_token", page.text)
+
 
 if __name__ == "__main__":
     unittest.main()

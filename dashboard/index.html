@@ -297,13 +297,64 @@
             </div>
           </section>
 
+          <section id="recent-events-panel" class="events-panel" aria-labelledby="recent-events-heading" hidden>
+            <div class="analytics-toolbar">
+              <div>
+                <p class="eyebrow">HISTORIA AKTYWNOŚCI</p>
+                <h2 id="recent-events-heading">Ostatnie zdarzenia</h2>
+                <p>Najnowsze zarejestrowane działania z czasu podanego w UTC.</p>
+              </div>
+              <form id="recent-events-filter" class="date-filter">
+                <label for="recent-events-date-from">Od<input id="recent-events-date-from" name="date_from" type="date"></label>
+                <label for="recent-events-date-to">Do<input id="recent-events-date-to" name="date_to" type="date"></label>
+                <label for="recent-events-limit">Liczba wyników<select id="recent-events-limit" name="limit"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+                <button class="button button-primary" type="submit">Zastosuj</button>
+                <button id="recent-events-clear-filter" class="button button-secondary" type="button">Cały okres</button>
+              </form>
+            </div>
+            <p id="recent-events-filter-error" class="status-message error filter-error" role="alert" hidden></p>
+            <div id="recent-events-loading" class="analytics-state" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Pobieranie historii zdarzeń…</p>
+            </div>
+            <div id="recent-events-error" class="analytics-state error-state" role="alert" hidden>
+              <h3>Nie udało się pobrać historii zdarzeń</h3>
+              <p>Sprawdź połączenie i spróbuj ponownie.</p>
+              <button id="recent-events-retry" class="button button-secondary" type="button">Spróbuj ponownie</button>
+            </div>
+            <div id="recent-events-empty" class="analytics-state" hidden>
+              <span class="empty-symbol" aria-hidden="true">↗</span>
+              <h3>Brak zdarzeń w wybranym okresie</h3>
+              <p>Zmień zakres dat albo wybierz cały dostępny okres.</p>
+            </div>
+            <div id="recent-events-content" hidden>
+              <article class="analytics-card events-table-card">
+                <div class="card-heading">
+                  <div><p class="eyebrow">NAJNOWSZE WPISY</p><h3>Historia zdarzeń</h3></div>
+                  <span id="recent-events-count" class="pill muted">0 zdarzeń</span>
+                </div>
+                <p class="events-time-note">Data i godzina są prezentowane w strefie UTC.</p>
+                <div class="table-scroll">
+                  <table class="recent-events-table">
+                    <thead><tr><th>Data i godzina (UTC)</th><th>Rodzaj zdarzenia</th><th>Strona</th><th>Szczegóły</th></tr></thead>
+                    <tbody id="recent-events-body"></tbody>
+                  </table>
+                </div>
+              </article>
+              <aside class="methodology-note" aria-label="Sposób interpretacji historii zdarzeń">
+                <strong>Zakres danych</strong>
+                <p>Tabela pokazuje wyłącznie informacje potrzebne do analizy działania DemoShop. Nie zawiera tokenów sesji, cookies, pełnych metadanych ani danych identyfikujących konkretną osobę.</p>
+              </aside>
+            </div>
+          </section>
+
           <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite" hidden>
             <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
             <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
             <div id="section-topics" class="topic-grid"></div>
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
           </section>
-          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 5</span></footer>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 6</span></footer>
         </main>
       </div>
     </div>

@@ -19,7 +19,7 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
 - opcjonalne filtry dat dla zestawień analitycznych;
 - uwierzytelnianie jednego właściciela i ochrona API analitycznego;
-- strona logowania i responsywny Dashboard z ukończonymi sekcjami Przegląd, Sesje, Strony i interakcje oraz Produkty.
+- strona logowania i responsywny Dashboard z pięcioma ukończonymi sekcjami.
 
 ### Funkcjonalności planowane w ramach pracy dyplomowej
 
@@ -52,7 +52,7 @@ Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą
 
 `backend/database.py` odczytuje `DATABASE_URL` ze zmiennych środowiskowych, używa psycopg i wykonuje zapytania parametryzowane. Operacje zapisu zdarzenia odbywają się w jednej transakcji. Definicje tabel znajdują się w `backend/schema.sql`.
 
-### 3.5. Dashboard — etapy 2–5
+### 3.5. Dashboard — etapy 2–6
 
 FastAPI obsługuje `/dashboard/login`, `/dashboard` oraz zasoby z `dashboard/assets` pod `/dashboard/assets`. Ścieżki do plików są wyznaczane względem projektu, niezależnie od bieżącego katalogu procesu. Panel wykorzystuje HTML, CSS i zwykły JavaScript, bez osobnego serwera frontendowego i procesu kompilacji. Wizualizacje tworzy Chart.js 4.6.1 w wersji UMD zapisanej lokalnie w `dashboard/assets/vendor/chart.js-4.6.1`; oryginalna licencja MIT znajduje się obok pliku biblioteki. W czasie działania nie jest wymagany zewnętrzny CDN.
 
@@ -78,7 +78,9 @@ Ranking kliknięć zachowuje odrębne kombinacje strony, elementu i celu zwróco
 
 Filtr Stron i interakcji przekazuje identyczne `date_from` oraz `date_to` do obu endpointów jako włączne granice dni UTC. Sekcja ma niezależne stany ładowania, braku danych i błędu, obsługuje `401`, anuluje starsze żądania oraz zabezpiecza się numerem żądania.
 
-Sekcja Produkty pobiera równolegle `/api/analytics/products` i `/api/analytics/funnel` dla jednego zakresu dni UTC. Pierwsza odpowiedź służy do sumowania zdarzeń `view_item` i `add_to_cart` oraz tworzenia niezależnych rankingów. Druga opisuje unikalne pary sesja–produkt i zasila dwustopniową wizualizację lejka oraz tabelę wyników produktów. Interfejs jawnie rozdziela liczbę zdarzeń od liczby par. Brak nazwy produktu otrzymuje bezpieczną etykietę zastępczą, bez ujawniania technicznego identyfikatora jako nazwy. Sekcja obsługuje walidację dat, ładowanie, pusty wynik, błąd, `401`, anulowanie starszego żądania oraz ochronę numerem żądania. Sekcja Zdarzenia pozostaje szkieletem. Dashboard nie uruchamia mechanizmu zdarzeń publicznego sklepu.
+Sekcja Produkty pobiera równolegle `/api/analytics/products` i `/api/analytics/funnel` dla jednego zakresu dni UTC. Pierwsza odpowiedź służy do sumowania zdarzeń `view_item` i `add_to_cart` oraz tworzenia niezależnych rankingów. Druga opisuje unikalne pary sesja–produkt i zasila dwustopniową wizualizację lejka oraz tabelę wyników produktów. Interfejs jawnie rozdziela liczbę zdarzeń od liczby par. Brak nazwy produktu otrzymuje bezpieczną etykietę zastępczą, bez ujawniania technicznego identyfikatora jako nazwy. Sekcja obsługuje walidację dat, ładowanie, pusty wynik, błąd, `401`, anulowanie starszego żądania oraz ochronę numerem żądania.
+
+Sekcja Zdarzenia pobiera `/api/analytics/recent-events`. Tabela prezentuje czas w UTC, polską nazwę typu, bezpieczną nazwę strony i krótki szczegół oparty na `product_name` albo `element`. Nie pokazuje `event_id`, `product_id`, tokenu sesji ani całego `metadata`. Nierozpoznane strony otrzymują neutralne etykiety bez ujawniania ścieżki, a brak nazwy produktu nie powoduje pokazania technicznego identyfikatora. Filtr przekazuje włączne `date_from` i `date_to` oraz limit 20, 50 albo 100. Odpowiedzi są defensywnie sortowane malejąco po czasie i `event_id`. Sekcja ma stany ładowania, pustego wyniku i błędu, obsługuje `401`, anulowanie starszego żądania oraz numer żądania. Dashboard nie uruchamia mechanizmu zdarzeń publicznego sklepu.
 
 Kontrola ważności sesji jest wykonywana co 60 sekund w widocznej karcie, ale nie wywołuje ponownego renderowania aktywnego Dashboardu. Dane i wykresy są pobierane po początkowym wejściu, zmianie filtra, ponownym wejściu do Przeglądu albo przywróceniu dokumentu z pamięci nawigacji przeglądarki. Wszystkie wykresy mają wyłączone animacje, dzięki czemu kontrola sesji i zmiany rozmiaru nie powodują cyklicznego odtwarzania wizualizacji.
 
@@ -277,7 +279,7 @@ Jeżeli zastosowano daty, zarówno `view_item`, jak i późniejsze `add_to_cart`
 - wykres aktywności dziennej;
 - wykres udziału typów zdarzeń;
 - ranking podstron i produktów (zaimplementowany);
-- tabela ostatnich zdarzeń na podstawie istniejącego endpointu;
+- tabela ostatnich zdarzeń na podstawie istniejącego endpointu (zaimplementowana);
 - wizualizacja czasu aktywności sesji i jego rozkładu;
 - wizualizacja istniejącego współczynnika przejścia od wyświetlenia produktu do dodania do koszyka (zaimplementowana);
 - filtry według dat, strony, typu zdarzenia i produktu.

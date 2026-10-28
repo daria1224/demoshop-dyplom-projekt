@@ -11,6 +11,7 @@ const {
   buildPagesChartConfig,
   buildPagesDetailChartConfig,
   buildProductRankings,
+  buildRecentEventsQuery,
   buildSessionMetrics,
   calculateSingleEventShare,
   chartInstances,
@@ -19,6 +20,9 @@ const {
   formatDuration,
   formatInteractionElement,
   formatInteractionTarget,
+  formatEventCount,
+  formatRecentEventDetails,
+  formatUtcTimestamp,
   getPagesAndClicksTotals,
   getProductEventTotals,
   getVisibleClickRows,
@@ -27,14 +31,159 @@ const {
   loadOverviewAnalytics,
   loadPagesAnalytics,
   loadProductAnalytics,
+  loadRecentEvents,
   needsDashboardRender,
   normalizeDemoShopPage,
   normalizeFunnelData,
   prepareClickRows,
   prepareProductRows,
+  prepareRecentEventRows,
   replaceChart,
   validateDateRange
 } = require('../dashboard/assets/dashboard.js');
+
+test('historia zdarzeń buduje filtry dat i dozwolone limity', () => {
+  assert.equal(buildRecentEventsQuery('', '', 20), '?limit=20');
+  assert.equal(
+    buildRecentEventsQuery('2026-05-01', '2026-05-03', 100),
+    '?date_from=2026-05-01&date_to=2026-05-03&limit=100'
+  );
+});
+
+test('czas zdarzenia jest prezentowany jawnie w UTC', () => {
+  const formatted = formatUtcTimestamp('2026-05-01T12:34:56+02:00');
+  assert.match(formatted, /10:34:56 UTC$/);
+  assert.equal(formatUtcTimestamp('not-a-date'), 'Nieprawidłowy czas');
+});
+
+test('licznik zdarzeń używa poprawnej polskiej odmiany', () => {
+  assert.equal(formatEventCount(0), '0 zdarzeń');
+  assert.equal(formatEventCount(1), '1 zdarzenie');
+  assert.equal(formatEventCount(3), '3 zdarzenia');
+  assert.equal(formatEventCount(12), '12 zdarzeń');
+});
+
+test('zdarzenia otrzymują polskie etykiety, bezpieczne strony i szczegóły', () => {
+  const rows = prepareRecentEventRows([
+    {
+      event_id: 3,
+      timestamp: '2026-05-02T10:00:00Z',
+      event_type: 'add_to_cart',
+      page: '/product.html?product=kubek-aurora',
+      element: 'add_to_cart_button',
+      product_id: 'kubek-aurora',
+      product_name: 'Kubek Aurora'
+    },
+    {
+      event_id: 2,
+      timestamp: '2026-05-02T09:00:00Z',
+      event_type: 'click',
+      page: '/C:/Users/Test/private.html',
+      element: 'navigation_link',
+      product_id: null,
+      product_name: null
+    },
+    {
+      event_id: 1,
+      timestamp: '2026-05-02T08:00:00Z',
+      event_type: 'unexpected_type',
+      page: '/unknown.html',
+      element: null,
+      product_id: null,
+      product_name: null
+    }
+  ]);
+  assert.equal(rows[0].eventType, 'Dodanie do koszyka');
+  assert.equal(rows[0].page, 'Szczegóły produktu');
+  assert.equal(rows[0].details, 'Produkt: Kubek Aurora');
+  assert.equal(rows[1].eventType, 'Kliknięcie');
+  assert.equal(rows[1].details, 'Element: Link nawigacyjny');
+  assert.match(rows[1].page, /^Inna strona/);
+  assert.equal(JSON.stringify(rows).includes('Users'), false);
+  assert.equal(rows[2].eventType, 'Inny rodzaj zdarzenia');
+  assert.equal(rows[2].details, '—');
+});
+
+test('wszystkie typy zdarzeń mają czytelne polskie nazwy', () => {
+  const types = ['page_view', 'click', 'view_item', 'add_to_cart', 'form_submit'];
+  const expected = [
+    'Wyświetlenie strony',
+    'Kliknięcie',
+    'Wyświetlenie produktu',
+    'Dodanie do koszyka',
+    'Wysłanie formularza'
+  ];
+  const rows = prepareRecentEventRows(types.map((eventType, index) => ({
+    event_id: index + 1,
+    timestamp: `2026-05-01T10:00:0${index}Z`,
+    event_type: eventType,
+    page: '/'
+  })));
+  assert.deepEqual(rows.reverse().map(row => row.eventType), expected);
+});
+
+test('historia zdarzeń sortuje malejąco po czasie i identyfikatorze', () => {
+  const rows = prepareRecentEventRows([
+    { event_id: 1, timestamp: '2026-05-01T10:00:00Z', event_type: 'page_view', page: '/' },
+    { event_id: 3, timestamp: '2026-05-02T10:00:00Z', event_type: 'page_view', page: '/' },
+    { event_id: 2, timestamp: '2026-05-02T10:00:00Z', event_type: 'page_view', page: '/' }
+  ]);
+  assert.deepEqual(rows.map(row => row.eventId), [3, 2, 1]);
+});
+
+test('szczegóły nie ujawniają identyfikatora produktu bez nazwy', () => {
+  assert.equal(
+    formatRecentEventDetails({ product_id: 'sekretny-identyfikator', product_name: '' }),
+    'Produkt (brak nazwy)'
+  );
+  assert.equal(
+    formatRecentEventDetails({
+      event_type: 'click',
+      product_id: 'kubek-aurora',
+      product_name: '',
+      element: 'view_product_button'
+    }),
+    'Element: Zobacz produkt'
+  );
+});
+
+test('loadRecentEvents obsługuje limit, 401, błąd sieci i anulowanie', async () => {
+  const calls = [];
+  const result = await loadRecentEvents(
+    { dateFrom: '2026-05-01', dateTo: '', limit: 50 },
+    async (path, options) => {
+      calls.push([path, options.signal]);
+      return [];
+    }
+  );
+  assert.deepEqual(result, []);
+  assert.equal(calls[0][0], '/api/analytics/recent-events?date_from=2026-05-01&limit=50');
+
+  const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 });
+  await assert.rejects(
+    loadRecentEvents({ dateFrom: '', dateTo: '', limit: 20 }, async () => { throw unauthorized; }),
+    error => error.status === 401
+  );
+  await assert.rejects(
+    loadRecentEvents({ dateFrom: '', dateTo: '', limit: 20 }, async () => { throw new Error('network'); }),
+    /network/
+  );
+
+  const controller = new AbortController();
+  const pending = loadRecentEvents(
+    { dateFrom: '', dateTo: '', limit: 20 },
+    (path, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    }),
+    controller.signal
+  );
+  controller.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError');
+});
 
 test('statystyki produktów sumują zdarzenia i tworzą niezależne rankingi', () => {
   const rows = [

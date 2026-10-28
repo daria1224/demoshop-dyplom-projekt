@@ -805,7 +805,8 @@ input:focus {
 .overview-panel,
 .sessions-panel,
 .pages-panel,
-.products-panel {
+.products-panel,
+.events-panel {
   margin-top: 25px;
 }
 
@@ -846,12 +847,21 @@ input:focus {
   margin: 0;
 }
 
-.date-filter input {
+.date-filter input,
+.date-filter select {
   min-height: 42px;
   width: 145px;
   margin: 0;
   padding: 8px 10px;
   font-size: 12px;
+}
+
+.date-filter select {
+  width: 118px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
 }
 
 .date-filter .button {
@@ -1003,6 +1013,76 @@ input:focus {
 
 .funnel-table {
   min-width: 630px;
+}
+
+.events-table-card {
+  margin-top: 16px;
+}
+
+.events-time-note {
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.recent-events-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10px;
+}
+
+.recent-events-table th,
+.recent-events-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.recent-events-table th {
+  color: var(--muted);
+  background: #f7f9f8;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+.recent-events-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.recent-events-table th:first-child,
+.recent-events-table td:first-child {
+  width: 180px;
+  white-space: nowrap;
+}
+
+.recent-events-table th:nth-child(2),
+.recent-events-table td:nth-child(2) {
+  width: 175px;
+}
+
+.recent-events-table th:nth-child(3),
+.recent-events-table td:nth-child(3) {
+  width: 145px;
+}
+
+.event-type-label {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #edf4ef;
+  color: #346a51;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.event-detail-muted {
+  color: var(--muted);
 }
 
 .sessions-kpi-grid {
@@ -1548,7 +1628,8 @@ input:focus {
     row-gap: 12px;
     width: 100%;
   }
-  .date-filter input {
+  .date-filter input,
+  .date-filter select {
     width: 100%;
   }
   .kpi-grid {
