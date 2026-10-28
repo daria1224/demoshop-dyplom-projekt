@@ -179,6 +179,51 @@ class DashboardTests(unittest.TestCase):
         ):
             self.assertIn(marker, page.text)
 
+    def test_pages_and_clicks_contract_and_dashboard_markup(self):
+        self.login()
+        filters = {"date_from": "2026-03-01", "date_to": "2026-03-05"}
+        pages = [{"page": "/products.html", "view_count": 7}]
+        clicks = [
+            {
+                "element": "navigation_link",
+                "page": "/index.html",
+                "target": "products.html",
+                "click_count": 4,
+            }
+        ]
+        with patch.object(main, "get_page_analytics", return_value=pages) as pages_query:
+            response = self.client.get("/api/analytics/pages", params=filters)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), pages)
+        self.assertEqual(pages_query.call_args.kwargs["date_from"].isoformat(), "2026-03-01")
+
+        with patch.object(main, "get_click_analytics", return_value=clicks) as clicks_query:
+            response = self.client.get("/api/analytics/clicks", params=filters)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), clicks)
+        self.assertEqual(clicks_query.call_args.kwargs["date_to"].isoformat(), "2026-03-05")
+
+        for endpoint in ("pages", "clicks"):
+            invalid = self.client.get(
+                f"/api/analytics/{endpoint}",
+                params={"date_from": "2026-03-06", "date_to": "2026-03-05"},
+            )
+            self.assertEqual(invalid.status_code, 422)
+
+        page = self.client.get("/dashboard")
+        for marker in (
+            'id="pages-panel"',
+            'id="pages-date-filter"',
+            'id="page-view-total"',
+            'id="click-total"',
+            'id="pages-detail-chart"',
+            'id="interactions-table-body"',
+            'id="pages-section-loading"',
+            'id="pages-section-empty"',
+            'id="pages-section-error"',
+        ):
+            self.assertIn(marker, page.text)
+
 
 if __name__ == "__main__":
     unittest.main()

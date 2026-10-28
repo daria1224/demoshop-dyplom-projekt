@@ -9,17 +9,24 @@ const {
   buildDateQuery,
   buildEventsChartConfig,
   buildPagesChartConfig,
+  buildPagesDetailChartConfig,
   buildSessionMetrics,
   calculateSingleEventShare,
   chartInstances,
   destroyChart,
   destroyCharts,
   formatDuration,
+  formatInteractionElement,
+  formatInteractionTarget,
+  getPagesAndClicksTotals,
+  getVisibleClickRows,
   hasSessionData,
   loadSessionAnalytics,
   loadOverviewAnalytics,
+  loadPagesAnalytics,
   needsDashboardRender,
   normalizeDemoShopPage,
+  prepareClickRows,
   replaceChart,
   validateDateRange
 } = require('../dashboard/assets/dashboard.js');
@@ -159,12 +166,111 @@ test('normalizacja mapuje sześć stron DemoShop i ostrożne ścieżki historycz
     ['/cart.html', 'Koszyk'],
     ['/about.html', 'O nas'],
     ['/contact.html', 'Kontakt'],
+    ['products.html', 'Produkty'],
     ['/C:/Users/Test/Documents/ChatGPT/demoshop/index.html', 'Strona główna'],
     ['C:\\Users\\Test\\Documents\\ChatGPT\\demoshop\\cart.html', 'Koszyk']
   ]);
   expected.forEach((label, path) => assert.equal(normalizeDemoShopPage(path).label, label));
   assert.equal(normalizeDemoShopPage('/foreign/index.html').label, null);
   assert.equal(normalizeDemoShopPage('/another-shop/cart.html').label, null);
+});
+
+test('szczegółowy wykres stron wykorzystuje pełny zagregowany ranking', () => {
+  const rows = [
+    { page: '/', view_count: 2 },
+    { page: '/index.html', view_count: 3 },
+    { page: '/products.html', view_count: 4 },
+    { page: '/cart.html', view_count: 1 }
+  ];
+  const chart = buildPagesDetailChartConfig(rows);
+  assert.equal(chart.type, 'bar');
+  assert.equal(chart.options.indexAxis, 'y');
+  assert.deepEqual(chart.data.labels, ['Strona główna', 'Produkty', 'Koszyk']);
+  assert.deepEqual(chart.data.datasets[0].data, [5, 4, 1]);
+});
+
+test('kliknięcia otrzymują czytelne i bezpieczne etykiety', () => {
+  const rows = prepareClickRows([
+    { page: '/products.html', element: 'view_product_button', target: 'kubek-aurora', click_count: 4 },
+    { page: '/index.html', element: 'navigation_link', target: 'products.html', click_count: 6 },
+    { page: '/C:/Users/Test/private/secret.html', element: 'custom_action', target: '/private/target', click_count: 2 },
+    { page: '/other/private.html', element: 'unknown', target: null, click_count: 1 }
+  ]);
+  assert.deepEqual(rows.map(row => row.click_count), [6, 4, 2, 1]);
+  assert.deepEqual(rows[0], {
+    page: 'Strona główna',
+    element: 'Link nawigacyjny',
+    target: 'Produkty',
+    click_count: 6
+  });
+  assert.equal(rows[1].element, 'Zobacz produkt');
+  assert.equal(rows[1].target, 'Kubek aurora');
+  assert.equal(rows[2].element, 'Custom action');
+  assert.equal(rows[2].target, 'Inny cel');
+  assert.equal(rows[3].element, 'Nieznany element');
+  assert.equal(rows[3].target, '—');
+  assert.equal(JSON.stringify(rows).includes('Users'), false);
+  assert.equal(JSON.stringify(rows).includes('private'), false);
+  assert.equal(formatInteractionElement('cart_remove'), 'Usunięcie produktu z koszyka');
+  assert.equal(formatInteractionTarget('/contact.html'), 'Kontakt');
+});
+
+test('sumy odsłon i kliknięć wynikają z obu odpowiedzi API', () => {
+  assert.deepEqual(
+    getPagesAndClicksTotals(
+      [{ page: '/', view_count: 3 }, { page: '/index.html', view_count: 2 }],
+      [{ click_count: 4 }, { click_count: 1 }]
+    ),
+    { pageViews: 5, clicks: 5 }
+  );
+  assert.deepEqual(getPagesAndClicksTotals([], []), { pageViews: 0, clicks: 0 });
+});
+
+test('ranking interakcji domyślnie ogranicza widok do dziesięciu pozycji', () => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({ click_count: 12 - index }));
+  assert.equal(getVisibleClickRows(rows).length, 10);
+  assert.equal(getVisibleClickRows(rows, true).length, 12);
+});
+
+test('loadPagesAnalytics stosuje jeden filtr i obsługuje 401 oraz anulowanie', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const data = await loadPagesAnalytics(
+    { dateFrom: '2026-03-01', dateTo: '2026-03-05' },
+    async (path, options) => {
+      calls.push([path, options.signal]);
+      return path.includes('/pages') ? [{ page: '/', view_count: 2 }] : [{ click_count: 1 }];
+    },
+    controller.signal
+  );
+  assert.equal(data.pages[0].view_count, 2);
+  assert.equal(data.clicks[0].click_count, 1);
+  assert.deepEqual(calls.map(call => call[0]), [
+    '/api/analytics/pages?date_from=2026-03-01&date_to=2026-03-05',
+    '/api/analytics/clicks?date_from=2026-03-01&date_to=2026-03-05'
+  ]);
+  assert.ok(calls.every(call => call[1] === controller.signal));
+
+  const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 });
+  await assert.rejects(
+    loadPagesAnalytics({ dateFrom: '', dateTo: '' }, async () => { throw unauthorized; }),
+    error => error.status === 401
+  );
+
+  const delayedController = new AbortController();
+  const pending = loadPagesAnalytics(
+    { dateFrom: '', dateTo: '' },
+    (path, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    }),
+    delayedController.signal
+  );
+  delayedController.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError');
 });
 
 test('ranking agreguje odpowiedniki przed sortowaniem i nie ujawnia lokalnych ścieżek', () => {

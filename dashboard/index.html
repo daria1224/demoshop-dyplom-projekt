@@ -169,13 +169,73 @@
             </div>
           </section>
 
+          <section id="pages-panel" class="pages-panel" aria-labelledby="pages-section-heading" hidden>
+            <div class="analytics-toolbar">
+              <div>
+                <p class="eyebrow">ZAKRES DANYCH</p>
+                <h2 id="pages-section-heading">Strony i interakcje</h2>
+                <p>Odsłony i kliknięcia z włącznie traktowanego zakresu dni UTC.</p>
+              </div>
+              <form id="pages-date-filter" class="date-filter">
+                <label for="pages-date-from">Od<input id="pages-date-from" name="date_from" type="date"></label>
+                <label for="pages-date-to">Do<input id="pages-date-to" name="date_to" type="date"></label>
+                <button class="button button-primary" type="submit">Zastosuj</button>
+                <button id="pages-clear-filter" class="button button-secondary" type="button">Cały okres</button>
+              </form>
+            </div>
+            <p id="pages-filter-error" class="status-message error filter-error" role="alert" hidden></p>
+            <div id="pages-section-loading" class="analytics-state" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Pobieranie statystyk stron i interakcji…</p>
+            </div>
+            <div id="pages-section-error" class="analytics-state error-state" role="alert" hidden>
+              <h3>Nie udało się pobrać danych</h3>
+              <p>Sprawdź połączenie i spróbuj ponownie.</p>
+              <button id="pages-section-retry" class="button button-secondary" type="button">Spróbuj ponownie</button>
+            </div>
+            <div id="pages-section-empty" class="analytics-state" hidden>
+              <span class="empty-symbol" aria-hidden="true">↗</span>
+              <h3>Brak odsłon i kliknięć w wybranym okresie</h3>
+              <p>Zmień zakres dat albo wybierz cały dostępny okres.</p>
+            </div>
+            <div id="pages-section-content" hidden>
+              <div class="pages-kpi-grid" aria-label="Podstawowe wskaźniki stron i interakcji">
+                <article class="pages-kpi-card"><span id="page-view-total" class="pages-kpi-number">0</span><h3>Odsłony stron</h3><p>Zdarzenia <code>page_view</code>, nie unikalne osoby</p></article>
+                <article class="pages-kpi-card"><span id="click-total" class="pages-kpi-number">0</span><h3>Kliknięcia</h3><p>Zarejestrowane zdarzenia <code>click</code></p></article>
+              </div>
+              <div class="pages-analysis-grid">
+                <article class="analytics-card pages-detail-card">
+                  <div class="card-heading"><div><p class="eyebrow">POPULARNOŚĆ</p><h3>Najpopularniejsze strony</h3></div><span id="pages-count" class="card-total"></span></div>
+                  <div id="pages-detail-chart-container" class="chart-container pages-detail-chart"><canvas id="pages-detail-chart" aria-label="Wykres odsłon stron"></canvas></div>
+                  <p id="pages-detail-empty" class="chart-empty" hidden>Brak odsłon stron w wybranym okresie.</p>
+                  <ol id="pages-detail-ranking" class="sr-only" aria-label="Ranking stron według liczby odsłon"></ol>
+                </article>
+                <article class="analytics-card interactions-card">
+                  <div class="card-heading"><div><p class="eyebrow">INTERAKCJE</p><h3>Najczęstsze interakcje</h3></div><span id="interactions-count" class="card-total"></span></div>
+                  <div id="interactions-table-wrap" class="table-scroll">
+                    <table class="interactions-table">
+                      <thead><tr><th>Strona</th><th>Element</th><th>Cel</th><th>Kliknięcia</th></tr></thead>
+                      <tbody id="interactions-table-body"></tbody>
+                    </table>
+                  </div>
+                  <p id="interactions-empty" class="chart-empty" hidden>Brak zarejestrowanych kliknięć w wybranym okresie.</p>
+                  <button id="interactions-toggle" class="text-button" type="button" hidden>Pokaż wszystkie</button>
+                </article>
+              </div>
+              <aside class="methodology-note" aria-label="Sposób interpretacji statystyk stron i interakcji">
+                <strong>Jak interpretować te dane?</strong>
+                <p>Odsłony oznaczają zdarzenia <code>page_view</code>, a nie unikalne osoby. Kliknięcia to wyłącznie instrumentowane zdarzenia <code>click</code>. Zestawienie obejmuje działania zapisane przez mechanizm śledzenia DemoShop, a nie każdą możliwą interakcję odwiedzającego.</p>
+              </aside>
+            </div>
+          </section>
+
           <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite" hidden>
             <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
             <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
             <div id="section-topics" class="topic-grid"></div>
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
           </section>
-          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 3</span></footer>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 4</span></footer>
         </main>
       </div>
     </div>

@@ -135,7 +135,10 @@ function normalizeDemoShopPage(value) {
   const normalizedPath = pathWithoutParameters.length > 1
     ? pathWithoutParameters.replace(/\/+$/, '')
     : pathWithoutParameters;
-  const directMatch = pageDefinitions[normalizedPath.toLowerCase()];
+  const directKey = /^(index|products|product|cart|about|contact)\.html$/i.test(normalizedPath)
+    ? `/${normalizedPath.toLowerCase()}`
+    : normalizedPath.toLowerCase();
+  const directMatch = pageDefinitions[directKey];
   if (directMatch) return directMatch;
 
   const historicalMatch = normalizedPath.match(
@@ -179,6 +182,73 @@ function aggregatePageViews(rows) {
       view_count: page.view_count
     };
   });
+}
+
+function humanizeIdentifier(value) {
+  const text = String(value || '').trim().replace(/[_-]+/g, ' ');
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+}
+
+function formatInteractionElement(value) {
+  const labels = {
+    navigation_link: 'Link nawigacyjny',
+    view_product_button: 'Zobacz produkt',
+    mobile_menu: 'Menu mobilne',
+    cart_increase: 'Zwiększenie ilości w koszyku',
+    cart_decrease: 'Zmniejszenie ilości w koszyku',
+    cart_remove: 'Usunięcie produktu z koszyka',
+    unknown: 'Nieznany element'
+  };
+  return labels[value] || humanizeIdentifier(value) || 'Nieznany element';
+}
+
+function formatInteractionTarget(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const normalizedPage = normalizeDemoShopPage(value);
+  if (normalizedPage.label) return normalizedPage.label;
+  const text = String(value).trim();
+  if (text.includes('/') || text.includes('\\')) return 'Inny cel';
+  return humanizeIdentifier(text) || '—';
+}
+
+function prepareClickRows(rows) {
+  const normalizedRows = rows.map(row => ({
+    page: normalizeDemoShopPage(row.page),
+    element: formatInteractionElement(row.element),
+    target: formatInteractionTarget(row.target),
+    click_count: Number(row.click_count) || 0
+  }));
+  const unknownKeys = [...new Set(
+    normalizedRows.filter(row => !row.page.label).map(row => row.page.key)
+  )].sort((first, second) => first.localeCompare(second));
+  const unknownLabels = new Map(unknownKeys.map((key, index) => [
+    key,
+    unknownKeys.length === 1 ? 'Inna strona' : `Inna strona ${index + 1}`
+  ]));
+  return normalizedRows
+    .map(row => ({
+      page: row.page.label || unknownLabels.get(row.page.key) || 'Inna strona',
+      element: row.element,
+      target: row.target,
+      click_count: row.click_count
+    }))
+    .sort((first, second) => (
+      second.click_count - first.click_count
+      || first.page.localeCompare(second.page, 'pl')
+      || first.element.localeCompare(second.element, 'pl')
+      || first.target.localeCompare(second.target, 'pl')
+    ));
+}
+
+function getPagesAndClicksTotals(pages, clicks) {
+  return {
+    pageViews: aggregatePageViews(pages).reduce((sum, row) => sum + row.view_count, 0),
+    clicks: clicks.reduce((sum, row) => sum + (Number(row.click_count) || 0), 0)
+  };
+}
+
+function getVisibleClickRows(rows, expanded = false) {
+  return expanded ? rows : rows.slice(0, 10);
 }
 
 function buildActivityChartConfig(rows) {
@@ -347,6 +417,16 @@ function buildPagesChartConfig(rows) {
   };
 }
 
+function buildPagesDetailChartConfig(rows) {
+  const visibleRows = aggregatePageViews(rows);
+  const config = buildPagesChartConfig(rows);
+  config.data.labels = visibleRows.map(row => row.label);
+  config.data.datasets[0].data = visibleRows.map(row => Number(row.view_count) || 0);
+  config.data.datasets[0].barThickness = 18;
+  config.options.scales.x.ticks.precision = 0;
+  return config;
+}
+
 function replaceChart(name, canvas, config, ChartConstructor = Chart) {
   if (chartInstances[name]) chartInstances[name].destroy();
   chartInstances[name] = new ChartConstructor(canvas, config);
@@ -378,6 +458,15 @@ async function loadOverviewAnalytics(filters, request = authRequest, signal) {
 async function loadSessionAnalytics(filters, request = authRequest, signal) {
   const query = buildDateQuery(filters.dateFrom, filters.dateTo);
   return request(`/api/analytics/sessions${query}`, { signal });
+}
+
+async function loadPagesAnalytics(filters, request = authRequest, signal) {
+  const query = buildDateQuery(filters.dateFrom, filters.dateTo);
+  const [pages, clicks] = await Promise.all([
+    request(`/api/analytics/pages${query}`, { signal }),
+    request(`/api/analytics/clicks${query}`, { signal })
+  ]);
+  return { pages, clicks };
 }
 
 async function authRequest(path, options = {}) {
@@ -531,6 +620,69 @@ function renderSessionAnalytics(data) {
   document.querySelector('#single-session-detail').textContent = `${formatNumber(singleCount)} z ${formatNumber(sessionCount)} sesji`;
 }
 
+function renderInteractionRows(rows, expanded = false) {
+  const body = document.querySelector('#interactions-table-body');
+  const tableWrap = document.querySelector('#interactions-table-wrap');
+  const empty = document.querySelector('#interactions-empty');
+  const toggle = document.querySelector('#interactions-toggle');
+  body.replaceChildren();
+  const visibleRows = getVisibleClickRows(rows, expanded);
+  visibleRows.forEach(row => {
+    const line = document.createElement('tr');
+    [row.page, row.element, row.target].forEach(value => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      line.append(cell);
+    });
+    const count = document.createElement('td');
+    count.className = 'number-cell';
+    count.textContent = formatNumber(row.click_count);
+    line.append(count);
+    body.append(line);
+  });
+  tableWrap.hidden = !rows.length;
+  empty.hidden = Boolean(rows.length);
+  toggle.hidden = rows.length <= 10;
+  toggle.textContent = expanded ? 'Pokaż mniej' : `Pokaż wszystkie (${formatNumber(rows.length)})`;
+}
+
+function renderPagesAnalytics(data, interactionsExpanded = false) {
+  const normalizedPages = aggregatePageViews(data.pages);
+  const clickRows = prepareClickRows(data.clicks);
+  const totals = getPagesAndClicksTotals(data.pages, data.clicks);
+  document.querySelector('#page-view-total').textContent = formatNumber(totals.pageViews);
+  document.querySelector('#click-total').textContent = formatNumber(totals.clicks);
+  document.querySelector('#pages-count').textContent = `${formatNumber(normalizedPages.length)} stron`;
+  document.querySelector('#interactions-count').textContent = `${formatNumber(clickRows.length)} pozycji`;
+
+  const ranking = document.querySelector('#pages-detail-ranking');
+  ranking.replaceChildren();
+  normalizedPages.forEach(row => {
+    const item = document.createElement('li');
+    item.textContent = `${row.label}: ${formatNumber(row.view_count)} odsłon`;
+    ranking.append(item);
+  });
+
+  const chartContainer = document.querySelector('#pages-detail-chart-container');
+  const chartEmpty = document.querySelector('#pages-detail-empty');
+  if (normalizedPages.length) {
+    chartContainer.hidden = false;
+    chartEmpty.hidden = true;
+    chartContainer.style.height = `${Math.max(240, normalizedPages.length * 44)}px`;
+    replaceChart(
+      'pages-detail',
+      document.querySelector('#pages-detail-chart'),
+      buildPagesDetailChartConfig(data.pages)
+    );
+  } else {
+    destroyChart('pages-detail');
+    chartContainer.hidden = true;
+    chartEmpty.hidden = false;
+  }
+  renderInteractionRows(clickRows, interactionsExpanded);
+  return clickRows;
+}
+
 function renderActivity(rows) {
   const summary = document.querySelector('#activity-summary');
   const total = rows.reduce((sum, row) => sum + (Number(row.event_count) || 0), 0);
@@ -601,6 +753,7 @@ function setupDashboard() {
   const logout = document.querySelector('#logout-button');
   const overviewPanel = document.querySelector('#overview-panel');
   const sessionsPanel = document.querySelector('#sessions-panel');
+  const pagesPanel = document.querySelector('#pages-panel');
   const placeholderPanel = document.querySelector('#section-panel');
   const filterForm = document.querySelector('#date-filter');
   const dateFrom = document.querySelector('#date-from');
@@ -618,12 +771,24 @@ function setupDashboard() {
   const sessionsError = document.querySelector('#sessions-error');
   const sessionsEmpty = document.querySelector('#sessions-empty');
   const sessionsContent = document.querySelector('#sessions-content');
+  const pagesFilterForm = document.querySelector('#pages-date-filter');
+  const pagesDateFrom = document.querySelector('#pages-date-from');
+  const pagesDateTo = document.querySelector('#pages-date-to');
+  const pagesFilterError = document.querySelector('#pages-filter-error');
+  const pagesLoading = document.querySelector('#pages-section-loading');
+  const pagesError = document.querySelector('#pages-section-error');
+  const pagesEmpty = document.querySelector('#pages-section-empty');
+  const pagesContent = document.querySelector('#pages-section-content');
   let checking = false;
   let authenticated = false;
   let overviewController = null;
   let overviewRequestId = 0;
   let sessionsController = null;
   let sessionsRequestId = 0;
+  let pagesController = null;
+  let pagesRequestId = 0;
+  let clickRows = [];
+  let interactionsExpanded = false;
 
   function showOverviewState(state) {
     overviewLoading.hidden = state !== 'loading';
@@ -725,6 +890,58 @@ function setupDashboard() {
     }
   }
 
+  function showPagesState(state) {
+    pagesLoading.hidden = state !== 'loading';
+    pagesError.hidden = state !== 'error';
+    pagesEmpty.hidden = state !== 'empty';
+    pagesContent.hidden = state !== 'content';
+  }
+
+  async function refreshPages() {
+    if (!authenticated || window.location.hash !== '#pages') return;
+    const validationError = validateDateRange(pagesDateFrom.value, pagesDateTo.value);
+    pagesFilterError.hidden = !validationError;
+    pagesFilterError.textContent = validationError;
+    if (validationError) return;
+
+    if (pagesController) pagesController.abort();
+    pagesController = new AbortController();
+    const requestId = ++pagesRequestId;
+    showPagesState('loading');
+    pagesFilterForm.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try {
+      const data = await loadPagesAnalytics(
+        { dateFrom: pagesDateFrom.value, dateTo: pagesDateTo.value },
+        authRequest,
+        pagesController.signal
+      );
+      if (requestId !== pagesRequestId) return;
+      const totals = getPagesAndClicksTotals(data.pages, data.clicks);
+      if (!totals.pageViews && !totals.clicks) {
+        destroyChart('pages-detail');
+        clickRows = [];
+        showPagesState('empty');
+        return;
+      }
+      interactionsExpanded = false;
+      clickRows = renderPagesAnalytics(data, interactionsExpanded);
+      showPagesState('content');
+    } catch (error) {
+      if (requestId !== pagesRequestId || error.name === 'AbortError') return;
+      if (error.status === 401) {
+        authenticated = false;
+        shell.hidden = true;
+        goToLogin();
+        return;
+      }
+      showPagesState('error');
+    } finally {
+      if (requestId === pagesRequestId) {
+        pagesFilterForm.querySelectorAll('button').forEach(button => { button.disabled = false; });
+      }
+    }
+  }
+
   function showSection(moveFocus = false) {
     const requested = window.location.hash.slice(1);
     const key = Object.hasOwn(sections, requested) ? requested : 'overview';
@@ -738,7 +955,8 @@ function setupDashboard() {
     document.querySelector('#panel-symbol').setAttribute('href', `#icon-${key}`);
     overviewPanel.hidden = key !== 'overview';
     sessionsPanel.hidden = key !== 'sessions';
-    placeholderPanel.hidden = key === 'overview' || key === 'sessions';
+    pagesPanel.hidden = key !== 'pages';
+    placeholderPanel.hidden = key === 'overview' || key === 'sessions' || key === 'pages';
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
@@ -762,6 +980,7 @@ function setupDashboard() {
     if (moveFocus && authenticated) title.focus();
     if (key === 'overview' && authenticated) refreshOverview();
     if (key === 'sessions' && authenticated) refreshSessions();
+    if (key === 'pages' && authenticated) refreshPages();
   }
 
   async function checkSession() {
@@ -841,6 +1060,21 @@ function setupDashboard() {
     refreshSessions();
   });
   document.querySelector('#sessions-retry').addEventListener('click', refreshSessions);
+  pagesFilterForm.addEventListener('submit', event => {
+    event.preventDefault();
+    refreshPages();
+  });
+  document.querySelector('#pages-clear-filter').addEventListener('click', () => {
+    pagesDateFrom.value = '';
+    pagesDateTo.value = '';
+    pagesFilterError.hidden = true;
+    refreshPages();
+  });
+  document.querySelector('#pages-section-retry').addEventListener('click', refreshPages);
+  document.querySelector('#interactions-toggle').addEventListener('click', () => {
+    interactionsExpanded = !interactionsExpanded;
+    renderInteractionRows(clickRows, interactionsExpanded);
+  });
   window.addEventListener('hashchange', () => {
     showSection(true);
     checkSession();
@@ -872,6 +1106,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildDateQuery,
     buildEventsChartConfig,
     buildPagesChartConfig,
+    buildPagesDetailChartConfig,
     buildSessionMetrics,
     calculateSingleEventShare,
     chartInstances,
@@ -879,11 +1114,17 @@ if (typeof module !== 'undefined' && module.exports) {
     destroyCharts,
     formatNumber,
     formatDuration,
+    formatInteractionElement,
+    formatInteractionTarget,
+    getPagesAndClicksTotals,
+    getVisibleClickRows,
     hasSessionData,
     loadOverviewAnalytics,
+    loadPagesAnalytics,
     loadSessionAnalytics,
     needsDashboardRender,
     normalizeDemoShopPage,
+    prepareClickRows,
     replaceChart,
     validateDateRange
   };
