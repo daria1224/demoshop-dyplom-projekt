@@ -160,9 +160,14 @@ def get_analytics_events(
 
 
 @analytics_router.get("/products")
-def get_analytics_products():
+def get_analytics_products(
+    date_from: date | None = None,
+    date_to: date | None = None,
+):
+    validate_date_range(date_from, date_to)
+
     try:
-        return get_product_analytics()
+        return get_product_analytics(date_from=date_from, date_to=date_to)
     except Exception:
         raise HTTPException(
             status_code=500,

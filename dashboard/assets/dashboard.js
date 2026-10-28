@@ -469,6 +469,87 @@ async function loadPagesAnalytics(filters, request = authRequest, signal) {
   return { pages, clicks };
 }
 
+function prepareProductRows(rows) {
+  const normalized = rows.map((row, index) => ({
+    product_id: row.product_id || '',
+    product_name: typeof row.product_name === 'string' && row.product_name.trim()
+      ? row.product_name.trim()
+      : '',
+    view_count: Math.max(0, Number(row.view_count) || 0),
+    add_to_cart_count: Math.max(0, Number(row.add_to_cart_count) || 0),
+    index
+  }));
+  const unnamedCount = normalized.filter(row => !row.product_name).length;
+  let unnamedIndex = 0;
+  return normalized.map(row => {
+    if (row.product_name) return row;
+    unnamedIndex += 1;
+    return {
+      ...row,
+      product_name: unnamedCount === 1
+        ? 'Produkt bez nazwy'
+        : `Produkt bez nazwy ${unnamedIndex}`
+    };
+  });
+}
+
+function buildProductRankings(rows) {
+  const products = prepareProductRows(rows);
+  const sortBy = field => products
+    .filter(row => row[field] > 0)
+    .sort((first, second) => (
+      second[field] - first[field]
+      || first.product_name.localeCompare(second.product_name, 'pl')
+      || first.index - second.index
+    ));
+  return {
+    views: sortBy('view_count'),
+    cart: sortBy('add_to_cart_count')
+  };
+}
+
+function getProductEventTotals(rows) {
+  return prepareProductRows(rows).reduce((totals, row) => ({
+    views: totals.views + row.view_count,
+    addToCart: totals.addToCart + row.add_to_cart_count
+  }), { views: 0, addToCart: 0 });
+}
+
+function normalizeFunnelData(data) {
+  const products = prepareProductRows((data?.products || []).map(row => ({
+    ...row,
+    view_count: row.viewed_session_product_pairs,
+    add_to_cart_count: row.converted_session_product_pairs
+  }))).map(row => ({
+    product_id: row.product_id,
+    product_name: row.product_name,
+    viewedPairs: row.view_count,
+    convertedPairs: row.add_to_cart_count,
+    conversionRate: Math.min(100, Math.max(0, Number(
+      data.products[row.index]?.conversion_rate_percent
+    ) || 0))
+  })).sort((first, second) => (
+    second.viewedPairs - first.viewedPairs
+    || second.convertedPairs - first.convertedPairs
+    || first.product_name.localeCompare(second.product_name, 'pl')
+  ));
+  return {
+    viewedPairs: Math.max(0, Number(data?.viewed_session_product_pairs) || 0),
+    convertedPairs: Math.max(0, Number(data?.converted_session_product_pairs) || 0),
+    conversionRate: Math.min(100, Math.max(0, Number(data?.conversion_rate_percent) || 0)),
+    products
+  };
+}
+
+async function loadProductAnalytics(filters, request = authRequest, signal) {
+  const query = buildDateQuery(filters.dateFrom, filters.dateTo);
+  const [products, funnel] = await Promise.all([
+    request(`/api/analytics/products${query}`, { signal }),
+    request(`/api/analytics/funnel${query}`, { signal })
+  ]);
+  return { products, funnel };
+}
+
 async function authRequest(path, options = {}) {
   const controller = new AbortController();
   const externalSignal = options.signal;
@@ -683,6 +764,79 @@ function renderPagesAnalytics(data, interactionsExpanded = false) {
   return clickRows;
 }
 
+function renderProductRanking(element, rows, field) {
+  element.replaceChildren();
+  const maximum = rows.length ? rows[0][field] : 0;
+  rows.forEach((row, index) => {
+    const item = document.createElement('li');
+    const heading = document.createElement('div');
+    const position = document.createElement('span');
+    position.className = 'product-ranking-position';
+    position.textContent = String(index + 1).padStart(2, '0');
+    const name = document.createElement('strong');
+    name.textContent = row.product_name;
+    const count = document.createElement('span');
+    count.className = 'product-ranking-count';
+    count.textContent = formatNumber(row[field]);
+    heading.append(position, name, count);
+    const track = document.createElement('div');
+    track.className = 'product-ranking-track';
+    const bar = document.createElement('span');
+    bar.style.width = `${maximum ? Math.max(5, (row[field] / maximum) * 100) : 0}%`;
+    track.append(bar);
+    item.append(heading, track);
+    element.append(item);
+  });
+}
+
+function renderProductAnalytics(data) {
+  const totals = getProductEventTotals(data.products);
+  const rankings = buildProductRankings(data.products);
+  const funnel = normalizeFunnelData(data.funnel);
+  document.querySelector('#product-views-total').textContent = formatNumber(totals.views);
+  document.querySelector('#add-to-cart-total').textContent = formatNumber(totals.addToCart);
+
+  renderProductRanking(
+    document.querySelector('#product-views-ranking'),
+    rankings.views,
+    'view_count'
+  );
+  renderProductRanking(
+    document.querySelector('#product-cart-ranking'),
+    rankings.cart,
+    'add_to_cart_count'
+  );
+  document.querySelector('#product-views-empty').hidden = Boolean(rankings.views.length);
+  document.querySelector('#product-cart-empty').hidden = Boolean(rankings.cart.length);
+
+  document.querySelector('#funnel-rate').textContent = `${numberFormatter.format(funnel.conversionRate)}%`;
+  document.querySelector('#funnel-viewed').textContent = formatNumber(funnel.viewedPairs);
+  document.querySelector('#funnel-converted').textContent = formatNumber(funnel.convertedPairs);
+  document.querySelector('#funnel-converted-step').style.width = `${Math.max(42, funnel.conversionRate)}%`;
+
+  const body = document.querySelector('#funnel-products-body');
+  body.replaceChildren();
+  funnel.products.forEach(product => {
+    const row = document.createElement('tr');
+    const values = [
+      product.product_name,
+      formatNumber(product.viewedPairs),
+      formatNumber(product.convertedPairs),
+      `${numberFormatter.format(product.conversionRate)}%`
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      if (index) cell.className = 'number-cell';
+      row.append(cell);
+    });
+    body.append(row);
+  });
+  document.querySelector('#funnel-products-wrap').hidden = !funnel.products.length;
+  document.querySelector('#funnel-products-empty').hidden = Boolean(funnel.products.length);
+  return { totals, funnel };
+}
+
 function renderActivity(rows) {
   const summary = document.querySelector('#activity-summary');
   const total = rows.reduce((sum, row) => sum + (Number(row.event_count) || 0), 0);
@@ -754,6 +908,7 @@ function setupDashboard() {
   const overviewPanel = document.querySelector('#overview-panel');
   const sessionsPanel = document.querySelector('#sessions-panel');
   const pagesPanel = document.querySelector('#pages-panel');
+  const productsPanel = document.querySelector('#products-panel');
   const placeholderPanel = document.querySelector('#section-panel');
   const filterForm = document.querySelector('#date-filter');
   const dateFrom = document.querySelector('#date-from');
@@ -779,6 +934,14 @@ function setupDashboard() {
   const pagesError = document.querySelector('#pages-section-error');
   const pagesEmpty = document.querySelector('#pages-section-empty');
   const pagesContent = document.querySelector('#pages-section-content');
+  const productsFilterForm = document.querySelector('#products-date-filter');
+  const productsDateFrom = document.querySelector('#products-date-from');
+  const productsDateTo = document.querySelector('#products-date-to');
+  const productsFilterError = document.querySelector('#products-filter-error');
+  const productsLoading = document.querySelector('#products-loading');
+  const productsError = document.querySelector('#products-error');
+  const productsEmpty = document.querySelector('#products-empty');
+  const productsContent = document.querySelector('#products-content');
   let checking = false;
   let authenticated = false;
   let overviewController = null;
@@ -787,6 +950,8 @@ function setupDashboard() {
   let sessionsRequestId = 0;
   let pagesController = null;
   let pagesRequestId = 0;
+  let productsController = null;
+  let productsRequestId = 0;
   let clickRows = [];
   let interactionsExpanded = false;
 
@@ -942,6 +1107,56 @@ function setupDashboard() {
     }
   }
 
+  function showProductsState(state) {
+    productsLoading.hidden = state !== 'loading';
+    productsError.hidden = state !== 'error';
+    productsEmpty.hidden = state !== 'empty';
+    productsContent.hidden = state !== 'content';
+  }
+
+  async function refreshProducts() {
+    if (!authenticated || window.location.hash !== '#products') return;
+    const validationError = validateDateRange(productsDateFrom.value, productsDateTo.value);
+    productsFilterError.hidden = !validationError;
+    productsFilterError.textContent = validationError;
+    if (validationError) return;
+
+    if (productsController) productsController.abort();
+    productsController = new AbortController();
+    const requestId = ++productsRequestId;
+    showProductsState('loading');
+    productsFilterForm.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try {
+      const data = await loadProductAnalytics(
+        { dateFrom: productsDateFrom.value, dateTo: productsDateTo.value },
+        authRequest,
+        productsController.signal
+      );
+      if (requestId !== productsRequestId) return;
+      const totals = getProductEventTotals(data.products);
+      const funnel = normalizeFunnelData(data.funnel);
+      if (!totals.views && !totals.addToCart && !funnel.viewedPairs) {
+        showProductsState('empty');
+        return;
+      }
+      renderProductAnalytics(data);
+      showProductsState('content');
+    } catch (error) {
+      if (requestId !== productsRequestId || error.name === 'AbortError') return;
+      if (error.status === 401) {
+        authenticated = false;
+        shell.hidden = true;
+        goToLogin();
+        return;
+      }
+      showProductsState('error');
+    } finally {
+      if (requestId === productsRequestId) {
+        productsFilterForm.querySelectorAll('button').forEach(button => { button.disabled = false; });
+      }
+    }
+  }
+
   function showSection(moveFocus = false) {
     const requested = window.location.hash.slice(1);
     const key = Object.hasOwn(sections, requested) ? requested : 'overview';
@@ -956,7 +1171,8 @@ function setupDashboard() {
     overviewPanel.hidden = key !== 'overview';
     sessionsPanel.hidden = key !== 'sessions';
     pagesPanel.hidden = key !== 'pages';
-    placeholderPanel.hidden = key === 'overview' || key === 'sessions' || key === 'pages';
+    productsPanel.hidden = key !== 'products';
+    placeholderPanel.hidden = ['overview', 'sessions', 'pages', 'products'].includes(key);
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
@@ -981,6 +1197,7 @@ function setupDashboard() {
     if (key === 'overview' && authenticated) refreshOverview();
     if (key === 'sessions' && authenticated) refreshSessions();
     if (key === 'pages' && authenticated) refreshPages();
+    if (key === 'products' && authenticated) refreshProducts();
   }
 
   async function checkSession() {
@@ -1075,6 +1292,17 @@ function setupDashboard() {
     interactionsExpanded = !interactionsExpanded;
     renderInteractionRows(clickRows, interactionsExpanded);
   });
+  productsFilterForm.addEventListener('submit', event => {
+    event.preventDefault();
+    refreshProducts();
+  });
+  document.querySelector('#products-clear-filter').addEventListener('click', () => {
+    productsDateFrom.value = '';
+    productsDateTo.value = '';
+    productsFilterError.hidden = true;
+    refreshProducts();
+  });
+  document.querySelector('#products-retry').addEventListener('click', refreshProducts);
   window.addEventListener('hashchange', () => {
     showSection(true);
     checkSession();
@@ -1121,10 +1349,15 @@ if (typeof module !== 'undefined' && module.exports) {
     hasSessionData,
     loadOverviewAnalytics,
     loadPagesAnalytics,
+    loadProductAnalytics,
     loadSessionAnalytics,
     needsDashboardRender,
     normalizeDemoShopPage,
     prepareClickRows,
+    prepareProductRows,
+    buildProductRankings,
+    getProductEventTotals,
+    normalizeFunnelData,
     replaceChart,
     validateDateRange
   };

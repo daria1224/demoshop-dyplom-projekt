@@ -229,13 +229,81 @@
             </div>
           </section>
 
+          <section id="products-panel" class="products-panel" aria-labelledby="products-section-heading" hidden>
+            <div class="analytics-toolbar">
+              <div>
+                <p class="eyebrow">ZAKRES DANYCH</p>
+                <h2 id="products-section-heading">Zainteresowanie produktami</h2>
+                <p>Zdarzenia i pary sesja–produkt z włącznie traktowanego zakresu dni UTC.</p>
+              </div>
+              <form id="products-date-filter" class="date-filter">
+                <label for="products-date-from">Od<input id="products-date-from" name="date_from" type="date"></label>
+                <label for="products-date-to">Do<input id="products-date-to" name="date_to" type="date"></label>
+                <button class="button button-primary" type="submit">Zastosuj</button>
+                <button id="products-clear-filter" class="button button-secondary" type="button">Cały okres</button>
+              </form>
+            </div>
+            <p id="products-filter-error" class="status-message error filter-error" role="alert" hidden></p>
+            <div id="products-loading" class="analytics-state" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Pobieranie statystyk produktów…</p>
+            </div>
+            <div id="products-error" class="analytics-state error-state" role="alert" hidden>
+              <h3>Nie udało się pobrać danych produktów</h3>
+              <p>Sprawdź połączenie i spróbuj ponownie.</p>
+              <button id="products-retry" class="button button-secondary" type="button">Spróbuj ponownie</button>
+            </div>
+            <div id="products-empty" class="analytics-state" hidden>
+              <span class="empty-symbol" aria-hidden="true">↗</span>
+              <h3>Brak aktywności produktów w wybranym okresie</h3>
+              <p>Zmień zakres dat albo wybierz cały dostępny okres.</p>
+            </div>
+            <div id="products-content" hidden>
+              <div class="products-kpi-grid" aria-label="Podstawowe wskaźniki produktów">
+                <article class="products-kpi-card"><span id="product-views-total" class="products-kpi-number">0</span><h3>Wyświetlenia produktów</h3><p>Łączna liczba wyświetleń produktów</p></article>
+                <article class="products-kpi-card"><span id="add-to-cart-total" class="products-kpi-number">0</span><h3>Dodania do koszyka</h3><p>Łączna liczba dodań produktów do koszyka</p></article>
+              </div>
+              <div class="product-rankings-grid">
+                <article class="analytics-card product-ranking-card">
+                  <div class="card-heading"><div><p class="eyebrow">ZAINTERESOWANIE</p><h3>Najczęściej oglądane produkty</h3></div></div>
+                  <ol id="product-views-ranking" class="product-ranking"></ol>
+                  <p id="product-views-empty" class="chart-empty" hidden>Brak wyświetleń produktów.</p>
+                </article>
+                <article class="analytics-card product-ranking-card">
+                  <div class="card-heading"><div><p class="eyebrow">KOSZYK</p><h3>Produkty dodawane do koszyka</h3></div></div>
+                  <ol id="product-cart-ranking" class="product-ranking"></ol>
+                  <p id="product-cart-empty" class="chart-empty" hidden>Brak dodań do koszyka.</p>
+                </article>
+              </div>
+              <article class="analytics-card funnel-card">
+                <div class="card-heading"><div><p class="eyebrow">LEJEK</p><h3>Lejek interakcji z produktami</h3></div><span id="funnel-rate" class="funnel-rate">0%</span></div>
+                <p class="funnel-caption">Unikalne pary sesja–produkt, a nie liczba zdarzeń.</p>
+                <div class="funnel-visual" aria-label="Dwustopniowy lejek interakcji z produktami">
+                  <div class="funnel-step funnel-viewed"><span>1</span><div><strong id="funnel-viewed">0</strong><p>Pary z wyświetleniem produktu</p></div></div>
+                  <div id="funnel-converted-step" class="funnel-step funnel-converted"><span>2</span><div><strong id="funnel-converted">0</strong><p>Pary z późniejszym dodaniem do koszyka</p></div></div>
+                </div>
+                <div id="funnel-products-wrap" class="table-scroll">
+                  <table class="funnel-table">
+                    <thead><tr><th>Produkt</th><th>Wyświetlenia</th><th>Dodania do koszyka</th><th>Przejście (%)</th></tr></thead>
+                    <tbody id="funnel-products-body"></tbody>
+                  </table>
+                </div>
+                <p id="funnel-products-empty" class="chart-empty" hidden>Brak par sesja–produkt do przedstawienia.</p>
+              </article>
+              <aside class="methodology-note" aria-label="Sposób interpretacji analityki produktów">
+                <strong>Jak interpretować te dane?</strong>
+                <p>Wyświetlenie oznacza zdarzenie <code>view_item</code>, a dodanie do koszyka — <code>add_to_cart</code>. Lejek łączy późniejsze dodanie z wcześniejszym wyświetleniem tego samego produktu w ramach jednej pseudonimowej sesji. Współczynnik nie oznacza zakupów, sprzedaży ani unikalnych osób.</p>
+              </aside>
+            </div>
+          </section>
+
           <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite" hidden>
             <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
             <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
             <div id="section-topics" class="topic-grid"></div>
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
           </section>
-          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 4</span></footer>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 5</span></footer>
         </main>
       </div>
     </div>

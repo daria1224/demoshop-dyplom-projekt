@@ -1,13 +1,14 @@
 import secrets
 import time
 import unittest
-from unittest.mock import patch
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
 with patch("dotenv.load_dotenv"):
-    from backend import auth, main
+    from backend import auth, database, main
 
 
 class DashboardTests(unittest.TestCase):
@@ -223,6 +224,169 @@ class DashboardTests(unittest.TestCase):
             'id="pages-section-error"',
         ):
             self.assertIn(marker, page.text)
+
+    def test_products_and_funnel_contract_and_dashboard_markup(self):
+        self.login()
+        products = [{
+            "product_name": "Kubek Aurora",
+            "product_id": "kubek-aurora",
+            "view_count": 7,
+            "add_to_cart_count": 3,
+        }]
+        funnel = {
+            "viewed_session_product_pairs": 4,
+            "converted_session_product_pairs": 2,
+            "conversion_rate_percent": 50.0,
+            "products": [],
+        }
+        filter_cases = (
+            ({}, None, None),
+            ({"date_from": "2026-04-01"}, "2026-04-01", None),
+            ({"date_to": "2026-04-05"}, None, "2026-04-05"),
+            (
+                {"date_from": "2026-04-01", "date_to": "2026-04-05"},
+                "2026-04-01",
+                "2026-04-05",
+            ),
+        )
+        for filters, expected_from, expected_to in filter_cases:
+            with self.subTest(filters=filters):
+                with patch.object(
+                    main,
+                    "get_product_analytics",
+                    return_value=products,
+                ) as product_query:
+                    response = self.client.get(
+                        "/api/analytics/products",
+                        params=filters,
+                    )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), products)
+                arguments = product_query.call_args.kwargs
+                actual_from = arguments["date_from"]
+                actual_to = arguments["date_to"]
+                self.assertEqual(
+                    actual_from.isoformat() if actual_from else None,
+                    expected_from,
+                )
+                self.assertEqual(
+                    actual_to.isoformat() if actual_to else None,
+                    expected_to,
+                )
+
+        with patch.object(
+            main,
+            "get_product_funnel",
+            return_value=funnel,
+        ) as funnel_query:
+            response = self.client.get(
+                "/api/analytics/funnel",
+                params={"date_from": "2026-04-01", "date_to": "2026-04-05"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), funnel)
+        self.assertEqual(
+            funnel_query.call_args.kwargs["date_to"].isoformat(),
+            "2026-04-05",
+        )
+
+        invalid = self.client.get(
+            "/api/analytics/products",
+            params={"date_from": "2026-04-06", "date_to": "2026-04-05"},
+        )
+        self.assertEqual(invalid.status_code, 422)
+
+        schema = self.client.get("/openapi.json").json()
+        product_parameters = {
+            parameter["name"]
+            for parameter in schema["paths"]["/api/analytics/products"]["get"][
+                "parameters"
+            ]
+        }
+        self.assertTrue({"date_from", "date_to"}.issubset(product_parameters))
+
+        page = self.client.get("/dashboard")
+        for label in (
+            "Łączna liczba wyświetleń produktów",
+            "Łączna liczba dodań produktów do koszyka",
+            "Pary z wyświetleniem produktu",
+            "Pary z późniejszym dodaniem do koszyka",
+            "Wyświetlenia",
+            "Dodania do koszyka",
+            "Przejście (%)",
+        ):
+            self.assertIn(label, page.text)
+        self.assertNotIn("Liczba zdarzeń <code>view_item</code>", page.text)
+        self.assertNotIn("Liczba zdarzeń <code>add_to_cart</code>", page.text)
+        for marker in (
+            'id="products-panel"',
+            'id="products-date-filter"',
+            'id="product-views-total"',
+            'id="add-to-cart-total"',
+            'id="product-views-ranking"',
+            'id="product-cart-ranking"',
+            'id="funnel-rate"',
+            'id="funnel-products-body"',
+            'id="products-loading"',
+            'id="products-empty"',
+            'id="products-error"',
+        ):
+            self.assertIn(marker, page.text)
+
+    def test_product_query_uses_parameterized_utc_day_filters(self):
+        cases = (
+            (None, None, ["view_item", "add_to_cart"], False, False),
+            (
+                date(2026, 4, 1),
+                None,
+                ["view_item", "add_to_cart", date(2026, 4, 1)],
+                True,
+                False,
+            ),
+            (
+                None,
+                date(2026, 4, 5),
+                ["view_item", "add_to_cart", date(2026, 4, 5)],
+                False,
+                True,
+            ),
+            (
+                date(2026, 4, 1),
+                date(2026, 4, 5),
+                [
+                    "view_item",
+                    "add_to_cart",
+                    date(2026, 4, 1),
+                    date(2026, 4, 5),
+                ],
+                True,
+                True,
+            ),
+        )
+        for date_from, date_to, expected_parameters, has_from, has_to in cases:
+            with self.subTest(date_from=date_from, date_to=date_to):
+                cursor = MagicMock()
+                cursor.__enter__.return_value = cursor
+                cursor.fetchall.return_value = []
+                connection = MagicMock()
+                connection.cursor.return_value = cursor
+                with patch.object(
+                    database,
+                    "_open_database_connection",
+                    return_value=connection,
+                ):
+                    result = database.get_product_analytics(date_from, date_to)
+
+                self.assertEqual(result, [])
+                query, parameters = cursor.execute.call_args.args
+                self.assertEqual(parameters, expected_parameters)
+                self.assertEqual("::date >= %s" in query, has_from)
+                self.assertEqual("::date <= %s" in query, has_to)
+                if has_from or has_to:
+                    self.assertIn("AT TIME ZONE 'UTC'", query)
+                else:
+                    self.assertNotIn("AT TIME ZONE 'UTC'", query)
+                connection.close.assert_called_once()
 
 
 if __name__ == "__main__":

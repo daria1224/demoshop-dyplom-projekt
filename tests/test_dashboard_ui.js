@@ -10,6 +10,7 @@ const {
   buildEventsChartConfig,
   buildPagesChartConfig,
   buildPagesDetailChartConfig,
+  buildProductRankings,
   buildSessionMetrics,
   calculateSingleEventShare,
   chartInstances,
@@ -19,17 +20,105 @@ const {
   formatInteractionElement,
   formatInteractionTarget,
   getPagesAndClicksTotals,
+  getProductEventTotals,
   getVisibleClickRows,
   hasSessionData,
   loadSessionAnalytics,
   loadOverviewAnalytics,
   loadPagesAnalytics,
+  loadProductAnalytics,
   needsDashboardRender,
   normalizeDemoShopPage,
+  normalizeFunnelData,
   prepareClickRows,
+  prepareProductRows,
   replaceChart,
   validateDateRange
 } = require('../dashboard/assets/dashboard.js');
+
+test('statystyki produktów sumują zdarzenia i tworzą niezależne rankingi', () => {
+  const rows = [
+    { product_id: 'a', product_name: 'Kubek Aurora', view_count: 8, add_to_cart_count: 2 },
+    { product_id: 'b', product_name: 'Lampka Luna', view_count: 3, add_to_cart_count: 5 },
+    { product_id: 'c', product_name: '', view_count: 1, add_to_cart_count: 0 }
+  ];
+  assert.deepEqual(getProductEventTotals(rows), { views: 12, addToCart: 7 });
+  const rankings = buildProductRankings(rows);
+  assert.equal(rankings.views[0].product_name, 'Kubek Aurora');
+  assert.equal(rankings.cart[0].product_name, 'Lampka Luna');
+  assert.equal(rankings.cart.length, 2);
+  assert.equal(prepareProductRows(rows)[2].product_name, 'Produkt bez nazwy');
+});
+
+test('lejek zachowuje pary sesja–produkt i nie utożsamia ich ze zdarzeniami', () => {
+  const funnel = normalizeFunnelData({
+    viewed_session_product_pairs: 3,
+    converted_session_product_pairs: 1,
+    conversion_rate_percent: 33.3,
+    products: [{
+      product_id: 'kubek-aurora',
+      product_name: 'Kubek Aurora',
+      viewed_session_product_pairs: 2,
+      converted_session_product_pairs: 1,
+      conversion_rate_percent: 50
+    }]
+  });
+  assert.equal(funnel.viewedPairs, 3);
+  assert.equal(funnel.convertedPairs, 1);
+  assert.equal(funnel.products[0].conversionRate, 50);
+  assert.notEqual(funnel.viewedPairs, 8);
+});
+
+test('pusty lejek ma bezpieczne wartości zerowe', () => {
+  assert.deepEqual(normalizeFunnelData({}), {
+    viewedPairs: 0,
+    convertedPairs: 0,
+    conversionRate: 0,
+    products: []
+  });
+});
+
+test('loadProductAnalytics przekazuje ten sam filtr do produktów i lejka', async () => {
+  const calls = [];
+  const request = async path => {
+    calls.push(path);
+    return path.includes('/products') ? [] : { products: [] };
+  };
+  const result = await loadProductAnalytics(
+    { dateFrom: '2026-04-01', dateTo: '2026-04-03' },
+    request
+  );
+  assert.deepEqual(result.products, []);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(path => path.endsWith('?date_from=2026-04-01&date_to=2026-04-03')));
+});
+
+test('loadProductAnalytics przekazuje 401, błąd sieci i anulowanie żądania', async () => {
+  const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 });
+  await assert.rejects(
+    loadProductAnalytics({ dateFrom: '', dateTo: '' }, async () => { throw unauthorized; }),
+    error => error.status === 401
+  );
+  await assert.rejects(
+    loadProductAnalytics({ dateFrom: '', dateTo: '' }, async () => { throw new Error('network'); }),
+    /network/
+  );
+
+  const controller = new AbortController();
+  const pending = loadProductAnalytics(
+    { dateFrom: '', dateTo: '' },
+    (path, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    }),
+    controller.signal
+  );
+  controller.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError');
+});
 
 test('buildDateQuery tworzy wspólny zakres dla wszystkich endpointów', () => {
   assert.equal(buildDateQuery('', ''), '');

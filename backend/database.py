@@ -217,13 +217,24 @@ def get_events_by_type(
         connection.close()
 
 
-def get_product_analytics() -> list[dict[str, object]]:
+def get_product_analytics(
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict[str, object]]:
     connection = _open_database_connection()
 
     try:
         with connection.cursor() as cursor:
+            date_filter, date_parameters = _build_event_date_filter(
+                date_from,
+                date_to,
+            )
+            date_conditions = date_filter.removeprefix("WHERE ")
+            additional_filter = (
+                f" AND {date_conditions}" if date_conditions else ""
+            )
             cursor.execute(
-                """
+                f"""
                 SELECT
                     e.metadata ->> 'product_name' AS product_name,
                     e.metadata ->> 'product_id' AS product_id,
@@ -233,12 +244,13 @@ def get_product_analytics() -> list[dict[str, object]]:
                 JOIN event_types et ON et.id = e.event_type_id
                 WHERE et.name IN (%s, %s)
                     AND e.metadata ->> 'product_id' IS NOT NULL
+                    {additional_filter}
                 GROUP BY
                     e.metadata ->> 'product_name',
                     e.metadata ->> 'product_id'
                 ORDER BY product_name NULLS LAST, product_id
                 """,
-                ("view_item", "add_to_cart"),
+                ["view_item", "add_to_cart", *date_parameters],
             )
             rows = cursor.fetchall()
 

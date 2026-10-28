@@ -19,7 +19,7 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
 - opcjonalne filtry dat dla zestawień analitycznych;
 - uwierzytelnianie jednego właściciela i ochrona API analitycznego;
-- strona logowania i responsywny Dashboard z ukończonymi sekcjami Przegląd, Sesje oraz Strony i interakcje.
+- strona logowania i responsywny Dashboard z ukończonymi sekcjami Przegląd, Sesje, Strony i interakcje oraz Produkty.
 
 ### Funkcjonalności planowane w ramach pracy dyplomowej
 
@@ -52,7 +52,7 @@ Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą
 
 `backend/database.py` odczytuje `DATABASE_URL` ze zmiennych środowiskowych, używa psycopg i wykonuje zapytania parametryzowane. Operacje zapisu zdarzenia odbywają się w jednej transakcji. Definicje tabel znajdują się w `backend/schema.sql`.
 
-### 3.5. Dashboard — etapy 2–4
+### 3.5. Dashboard — etapy 2–5
 
 FastAPI obsługuje `/dashboard/login`, `/dashboard` oraz zasoby z `dashboard/assets` pod `/dashboard/assets`. Ścieżki do plików są wyznaczane względem projektu, niezależnie od bieżącego katalogu procesu. Panel wykorzystuje HTML, CSS i zwykły JavaScript, bez osobnego serwera frontendowego i procesu kompilacji. Wizualizacje tworzy Chart.js 4.6.1 w wersji UMD zapisanej lokalnie w `dashboard/assets/vendor/chart.js-4.6.1`; oryginalna licencja MIT znajduje się obok pliku biblioteki. W czasie działania nie jest wymagany zewnętrzny CDN.
 
@@ -76,7 +76,9 @@ Sekcja Strony i interakcje pobiera dla jednego zakresu dat tablice z `/api/analy
 
 Ranking kliknięć zachowuje odrębne kombinacje strony, elementu i celu zwrócone przez API. Znane techniczne identyfikatory elementów są mapowane na polskie etykiety, a pozostałe są jedynie formatowane do czytelnej postaci, bez przypisywania im wymyślonego znaczenia. Znane cele nawigacyjne używają nazw stron; nieznane ścieżki są ukrywane jako `Inny cel`. Dane trafiają do DOM przez `textContent`. Tabela pokazuje pierwszych dziesięć pozycji i pozwala rozwinąć pełny wynik.
 
-Filtr Stron i interakcji przekazuje identyczne `date_from` oraz `date_to` do obu endpointów jako włączne granice dni UTC. Sekcja ma niezależne stany ładowania, braku danych i błędu, obsługuje `401`, anuluje starsze żądania oraz zabezpiecza się numerem żądania. Pozostałe dwie sekcje nadal są szkieletami i nie pobierają danych. Dashboard nie uruchamia mechanizmu zdarzeń publicznego sklepu.
+Filtr Stron i interakcji przekazuje identyczne `date_from` oraz `date_to` do obu endpointów jako włączne granice dni UTC. Sekcja ma niezależne stany ładowania, braku danych i błędu, obsługuje `401`, anuluje starsze żądania oraz zabezpiecza się numerem żądania.
+
+Sekcja Produkty pobiera równolegle `/api/analytics/products` i `/api/analytics/funnel` dla jednego zakresu dni UTC. Pierwsza odpowiedź służy do sumowania zdarzeń `view_item` i `add_to_cart` oraz tworzenia niezależnych rankingów. Druga opisuje unikalne pary sesja–produkt i zasila dwustopniową wizualizację lejka oraz tabelę wyników produktów. Interfejs jawnie rozdziela liczbę zdarzeń od liczby par. Brak nazwy produktu otrzymuje bezpieczną etykietę zastępczą, bez ujawniania technicznego identyfikatora jako nazwy. Sekcja obsługuje walidację dat, ładowanie, pusty wynik, błąd, `401`, anulowanie starszego żądania oraz ochronę numerem żądania. Sekcja Zdarzenia pozostaje szkieletem. Dashboard nie uruchamia mechanizmu zdarzeń publicznego sklepu.
 
 Kontrola ważności sesji jest wykonywana co 60 sekund w widocznej karcie, ale nie wywołuje ponownego renderowania aktywnego Dashboardu. Dane i wykresy są pobierane po początkowym wejściu, zmianie filtra, ponownym wejściu do Przeglądu albo przywróceniu dokumentu z pamięci nawigacji przeglądarki. Wszystkie wykresy mają wyłączone animacje, dzięki czemu kontrola sesji i zmiany rozmiaru nie powodują cyklicznego odtwarzania wizualizacji.
 
@@ -176,7 +178,7 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 |---|---|---|---|
 | `GET` | `/` | istnieje | komunikat kontrolny API |
 | `GET` | `/dashboard/login` | istnieje | publiczny formularz logowania |
-| `GET` | `/dashboard` | istnieje | szkielet interfejsu właściciela bez danych analitycznych |
+| `GET` | `/dashboard` | istnieje | interfejs właściciela; dane analityczne są pobierane po uwierzytelnieniu |
 | `GET` | `/api/db-test` | istnieje | informacja o połączeniu z bazą |
 | `POST` | `/api/events` | istnieje | walidacja i zapis zdarzenia |
 | `POST` | `/api/auth/login` | istnieje | weryfikacja właściciela i utworzenie sesji |
@@ -196,7 +198,7 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 
 `sessions` i `clicks` przyjmują takie same opcjonalne, włączne granice dni UTC. W `sessions` zakres wybiera zdarzenia, a nie całe historyczne sesje: uwzględniane są sesje z co najmniej jednym zdarzeniem w okresie, natomiast ich liczba zdarzeń i czas aktywności są obliczane wyłącznie z danych należących do okresu.
 
-`recent-events` i `funnel` przyjmują opcjonalne `date_from` i `date_to` o tej samej semantyce. `recent-events` obsługuje dodatkowo całkowity parametr `limit` od `1` do `100`, domyślnie `20`. Nieprawidłowy limit, format daty albo zakres z `date_from` późniejszym niż `date_to` jest odrzucany kodem 422.
+`products`, `recent-events` i `funnel` przyjmują opcjonalne `date_from` i `date_to` o tej samej semantyce. `recent-events` obsługuje dodatkowo całkowity parametr `limit` od `1` do `100`, domyślnie `20`. Nieprawidłowy limit, format daty albo zakres z `date_from` późniejszym niż `date_to` jest odrzucany kodem 422.
 
 ## 9. Zasady obliczania wskaźników
 
@@ -274,10 +276,10 @@ Jeżeli zastosowano daty, zarówno `view_item`, jak i późniejsze `add_to_cart`
 - karty podstawowych statystyk;
 - wykres aktywności dziennej;
 - wykres udziału typów zdarzeń;
-- ranking podstron i produktów;
+- ranking podstron i produktów (zaimplementowany);
 - tabela ostatnich zdarzeń na podstawie istniejącego endpointu;
 - wizualizacja czasu aktywności sesji i jego rozkładu;
-- wizualizacja istniejącego współczynnika przejścia od wyświetlenia produktu do dodania do koszyka;
+- wizualizacja istniejącego współczynnika przejścia od wyświetlenia produktu do dodania do koszyka (zaimplementowana);
 - filtry według dat, strony, typu zdarzenia i produktu.
 
 ## 11. Uwierzytelnianie właściciela
