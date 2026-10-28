@@ -144,6 +144,41 @@ class DashboardTests(unittest.TestCase):
             }
             self.assertTrue({"date_from", "date_to"}.issubset(parameter_names))
 
+    def test_sessions_endpoint_contract_and_dashboard_markup(self):
+        self.login()
+        payload = {
+            "session_count": 4,
+            "average_activity_duration_seconds": 75.5,
+            "single_event_session_count": 1,
+            "average_events_per_session": 2.5,
+            "median_activity_duration_seconds": 45.0,
+        }
+        with patch.object(main, "get_session_analytics", return_value=payload):
+            response = self.client.get(
+                "/api/analytics/sessions",
+                params={"date_from": "2026-02-01", "date_to": "2026-02-05"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), payload)
+
+        invalid = self.client.get(
+            "/api/analytics/sessions",
+            params={"date_from": "2026-02-06", "date_to": "2026-02-05"},
+        )
+        self.assertEqual(invalid.status_code, 422)
+
+        page = self.client.get("/dashboard")
+        for marker in (
+            'id="sessions-panel"',
+            'id="sessions-date-filter"',
+            'id="sessions-kpi-grid"',
+            'id="single-session-share"',
+            'id="sessions-loading"',
+            'id="sessions-empty"',
+            'id="sessions-error"',
+        ):
+            self.assertIn(marker, page.text)
+
 
 if __name__ == "__main__":
     unittest.main()

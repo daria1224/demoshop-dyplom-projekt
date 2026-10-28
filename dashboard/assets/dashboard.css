@@ -802,7 +802,8 @@ input:focus {
   margin-top: 6px;
 }
 
-.overview-panel {
+.overview-panel,
+.sessions-panel {
   margin-top: 25px;
 }
 
@@ -856,8 +857,120 @@ input:focus {
   padding: 10px 14px;
 }
 
+.filter-error,
 #filter-error {
   margin-top: 12px;
+}
+
+.sessions-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.session-kpi-card {
+  min-width: 0;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 22px 19px;
+}
+
+.session-kpi-card:first-child {
+  background: #eef4ec;
+  border-color: #dce7d8;
+}
+
+.session-kpi-number {
+  display: block;
+  min-height: 42px;
+  color: var(--accent);
+  font-size: clamp(23px, 2vw, 31px);
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.session-kpi-card h3 {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 10px;
+}
+
+.session-kpi-card p {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+
+.single-session-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr);
+  align-items: center;
+  gap: 36px;
+  margin-top: 14px;
+  padding: 25px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.single-session-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 7px 0 6px;
+}
+
+.single-session-card > div > p:last-child,
+.single-session-result p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.single-session-result strong {
+  display: block;
+  color: var(--accent);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.percentage-track {
+  height: 9px;
+  margin: 11px 0 8px;
+  overflow: hidden;
+  background: #e8efeb;
+  border-radius: 999px;
+}
+
+.percentage-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: #6f9c84;
+  border-radius: inherit;
+  transition: width .2s ease;
+}
+
+.methodology-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 17px 19px;
+  color: var(--muted);
+  background: #f4f7f5;
+  border-radius: 12px;
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.methodology-note strong {
+  color: var(--ink);
+  white-space: nowrap;
 }
 
 .analytics-state {
@@ -1059,6 +1172,9 @@ input:focus {
   .kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .sessions-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1171,6 +1287,20 @@ input:focus {
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .sessions-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .single-session-card {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .methodology-note {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .methodology-note strong {
+    white-space: normal;
+  }
   .analytics-grid {
     grid-template-columns: 1fr;
   }
@@ -1194,6 +1324,15 @@ input:focus {
   }
   .dashboard-footer {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 430px) {
+  .sessions-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .session-kpi-number {
+    min-height: 0;
   }
 }
 

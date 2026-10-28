@@ -119,13 +119,63 @@
             </div>
           </section>
 
+          <section id="sessions-panel" class="sessions-panel" aria-labelledby="sessions-heading" hidden>
+            <div class="analytics-toolbar">
+              <div>
+                <p class="eyebrow">ZAKRES DANYCH</p>
+                <h2 id="sessions-heading">Analiza sesji</h2>
+                <p>Zdarzenia z włącznie traktowanego zakresu dni UTC.</p>
+              </div>
+              <form id="sessions-date-filter" class="date-filter">
+                <label for="sessions-date-from">Od<input id="sessions-date-from" name="date_from" type="date"></label>
+                <label for="sessions-date-to">Do<input id="sessions-date-to" name="date_to" type="date"></label>
+                <button class="button button-primary" type="submit">Zastosuj</button>
+                <button id="sessions-clear-filter" class="button button-secondary" type="button">Cały okres</button>
+              </form>
+            </div>
+            <p id="sessions-filter-error" class="status-message error filter-error" role="alert" hidden></p>
+            <div id="sessions-loading" class="analytics-state" role="status" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <p>Pobieranie statystyk sesji…</p>
+            </div>
+            <div id="sessions-error" class="analytics-state error-state" role="alert" hidden>
+              <h3>Nie udało się pobrać danych sesji</h3>
+              <p>Sprawdź połączenie i spróbuj ponownie.</p>
+              <button id="sessions-retry" class="button button-secondary" type="button">Spróbuj ponownie</button>
+            </div>
+            <div id="sessions-empty" class="analytics-state" hidden>
+              <span class="empty-symbol" aria-hidden="true">↗</span>
+              <h3>Brak sesji w wybranym okresie</h3>
+              <p>Zmień zakres dat albo wybierz cały dostępny okres.</p>
+            </div>
+            <div id="sessions-content" hidden>
+              <div id="sessions-kpi-grid" class="sessions-kpi-grid" aria-label="Wskaźniki sesji"></div>
+              <article class="single-session-card" aria-labelledby="single-session-heading">
+                <div>
+                  <p class="eyebrow">ZAANGAŻOWANIE</p>
+                  <h3 id="single-session-heading">Udział sesji z jednym zdarzeniem</h3>
+                  <p>Odsetek sesji, w których zarejestrowano dokładnie jedno zdarzenie.</p>
+                </div>
+                <div class="single-session-result">
+                  <strong id="single-session-share">0%</strong>
+                  <div class="percentage-track" aria-hidden="true"><span id="single-session-bar"></span></div>
+                  <p id="single-session-detail">0 z 0 sesji</p>
+                </div>
+              </article>
+              <aside class="methodology-note" aria-label="Sposób interpretacji statystyk sesji">
+                <strong>Jak interpretować te dane?</strong>
+                <p>Sesje są rozpoznawane za pomocą pseudonimowego identyfikatora i nie oznaczają unikalnych osób. Czas aktywności to odstęp między pierwszym a ostatnim zarejestrowanym zdarzeniem w wybranym zakresie. Dla sesji z jednym zdarzeniem wynosi on 0 sekund.</p>
+              </aside>
+            </div>
+          </section>
+
           <section id="section-panel" class="section-panel" aria-labelledby="panel-title" aria-live="polite" hidden>
             <div class="panel-heading"><div class="panel-icon"><svg class="icon" aria-hidden="true"><use id="panel-symbol" href="#icon-overview"/></svg></div><div><h2 id="panel-title">Aktywność w jednym miejscu</h2><p>Zakres sekcji</p></div><span class="pill muted">W PRZYGOTOWANIU</span></div>
             <p id="panel-description" class="panel-description">Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.</p>
             <div id="section-topics" class="topic-grid"></div>
             <div class="empty-state"><span class="empty-symbol" aria-hidden="true">↗</span><div><h3>Wizualizacje są w przygotowaniu</h3><p>Ta sekcja nie prezentuje jeszcze statystyk. Zestawienia zostaną dodane w kolejnym etapie.</p></div></div>
           </section>
-          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 2</span></footer>
+          <footer class="dashboard-footer"><span>DemoShop Analytics</span><span>Panel właściciela · Etap 3</span></footer>
         </main>
       </div>
     </div>

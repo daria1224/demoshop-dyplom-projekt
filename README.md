@@ -147,7 +147,7 @@ Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzen
 |---|---|---|
 | `GET` | `/` | Informacja o działaniu API |
 | `GET` | `/dashboard/login` | Strona logowania właściciela |
-| `GET` | `/dashboard` | Szkielet panelu z pięcioma sekcjami |
+| `GET` | `/dashboard` | Panel właściciela z pięcioma sekcjami nawigacji |
 | `GET` | `/api/db-test` | Kontrola połączenia z PostgreSQL |
 | `POST` | `/api/events` | Walidacja i zapis pojedynczego zdarzenia |
 | `POST` | `/api/auth/login` | Logowanie właściciela i ustawienie ciasteczka sesyjnego |
@@ -183,13 +183,15 @@ Sesja właściciela wygasa domyślnie po 30 minutach od logowania i nie jest aut
 
 Lokalne logowanie można sprawdzić przez `/dashboard/login` albo Swagger UI. Formularz wysyła dane do `/api/auth/login`, a po sukcesie przechodzi do `/dashboard`. Należy konsekwentnie używać tej samej nazwy hosta. Nie ma rejestracji, ról, odzyskiwania hasła ani kont odwiedzających.
 
-## Dashboard — etap 2
+## Dashboard — etapy 2 i 3
 
-Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcja Przegląd prezentuje rzeczywiste dane z chronionego API: sześć kart KPI, liniowy wykres aktywności oraz poziome wykresy typów zdarzeń i sześciu najpopularniejszych stron. Wykresy tworzy lokalna, wersjonowana biblioteka Chart.js 4.6.1. Znane adresy DemoShop są agregowane i wyświetlane jako polskie nazwy, a lokalne katalogi historycznych ścieżek nie są ujawniane. Pozostałe cztery sekcje nadal zawierają opisy przygotowywanych zestawień, bez fikcyjnych statystyk.
+Panel ma responsywne menu z pięcioma sekcjami: Przegląd, Sesje, Strony i interakcje, Produkty oraz Zdarzenia. Sekcja Przegląd prezentuje rzeczywiste dane z chronionego API: sześć kart KPI, liniowy wykres aktywności oraz poziome wykresy typów zdarzeń i sześciu najpopularniejszych stron. Wykresy tworzy lokalna, wersjonowana biblioteka Chart.js 4.6.1. Znane adresy DemoShop są agregowane i wyświetlane jako polskie nazwy, a lokalne katalogi historycznych ścieżek nie są ujawniane.
+
+Sekcja Sesje korzysta z `/api/analytics/sessions` i prezentuje liczbę sesji, średni oraz medianowy czas zarejestrowanej aktywności, średnią liczbę zdarzeń na sesję, liczbę sesji z jednym zdarzeniem i ich procentowy udział. Czas jest formatowany w sekundach i minutach. Osobne objaśnienie przypomina, że sesja nie oznacza unikalnej osoby, a czas aktywności jest odstępem między pierwszym i ostatnim zdarzeniem. Dla sesji z jednym zdarzeniem wynosi 0 sekund. Pozostałe trzy sekcje nadal zawierają opisy przygotowywanych zestawień, bez fikcyjnych statystyk.
 
 Plik `dashboard/assets/vendor/chart.js-4.6.1/chart.umd.min.js` jest obsługiwany przez FastAPI przed skryptem Dashboardu. Aplikacja nie pobiera biblioteki z CDN podczas działania. Dołączony `LICENSE.md` zachowuje warunki licencji MIT Chart.js.
 
-Wspólny filtr `Od`–`Do` odświeża wszystkie elementy Przeglądu dla tego samego, włącznie traktowanego zakresu dni UTC. Puste pola oznaczają cały dostępny okres. Interfejs waliduje odwrócony zakres, pokazuje stany ładowania, błędu i braku danych oraz nie pozwala starszej odpowiedzi zastąpić wyniku nowszego filtrowania. Wygaśnięcie sesji podczas pobierania danych kieruje do logowania.
+Filtry `Od`–`Do` w sekcjach Przegląd i Sesje wykorzystują włącznie traktowane zakresy dni UTC. Puste pola oznaczają cały dostępny okres. W sekcji Sesje statystyki są liczone wyłącznie ze zdarzeń mieszczących się w zakresie, więc mogą opisywać tylko fragment historycznej aktywności sesji. Interfejs waliduje odwrócony zakres, pokazuje stany ładowania, błędu i braku danych oraz nie pozwala starszej odpowiedzi zastąpić wyniku nowszego filtrowania. Wygaśnięcie sesji podczas pobierania danych kieruje do logowania.
 
 Dokumenty HTML są publicznymi szkieletami i nie zawierają danych analitycznych. Po otwarciu panel pokazuje stan ładowania i sprawdza `/api/auth/status`; brak aktywnej sesji kieruje do logowania. Kontrola jest ponawiana przy powrocie do karty, zmianie sekcji i co minutę w widocznej karcie. Przycisk wylogowania korzysta z istniejącego `/api/auth/logout`. Błędy połączenia mają czytelne komunikaty, a kontrolę sesji można ponowić.
 
@@ -231,16 +233,17 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - historia ostatnich zdarzeń z kontrolowaną listą zwracanych pól;
 - lejek interakcji `view_item` → `add_to_cart` dla par sesja–produkt;
 - uwierzytelnianie jednego właściciela i ochrona API analitycznego;
-- strona logowania i responsywny Dashboard z pięcioma działającymi sekcjami;
-- rzeczywiste KPI, wykres aktywności, rozkład zdarzeń, ranking stron i wspólny filtr dat w sekcji Przegląd.
+- strona logowania i responsywny Dashboard z pięcioma pozycjami nawigacji;
+- rzeczywiste KPI, wykres aktywności, rozkład zdarzeń, ranking stron i wspólny filtr dat w sekcji Przegląd;
+- rzeczywiste wskaźniki sesji, udział sesji z jednym zdarzeniem i osobny filtr dat w sekcji Sesje.
 
 ## Planowany rozwój
 
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
-- prezentacja rzeczywistych danych w sekcjach Sesje, Strony i interakcje, Produkty oraz Zdarzenia;
+- prezentacja rzeczywistych danych w sekcjach Strony i interakcje, Produkty oraz Zdarzenia;
 - wykresy i zestawienia szczegółowe popularności stron i produktów;
-- dalsze wskaźniki oraz wizualizacje dotyczące sesji;
+- ewentualne dalsze wizualizacje sesji, jeśli backend zostanie rozszerzony o odpowiednie dane;
 - rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
 - docelowa konfiguracja CORS i HTTPS dla adresów wdrożeniowych;
 - wdrożenie backendu i frontendu w środowisku chmurowym.

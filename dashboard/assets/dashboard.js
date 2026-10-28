@@ -101,6 +101,34 @@ function formatNumber(value) {
   return numberFormatter.format(Number(value) || 0);
 }
 
+function formatDuration(value) {
+  const seconds = Math.max(0, Math.round(Number(value) || 0));
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes} min ${remainder} s` : `${minutes} min`;
+}
+
+function calculateSingleEventShare(sessionCount, singleEventSessionCount) {
+  const total = Math.max(0, Number(sessionCount) || 0);
+  const single = Math.max(0, Number(singleEventSessionCount) || 0);
+  return total ? Math.min(100, Math.round((single / total) * 1000) / 10) : 0;
+}
+
+function hasSessionData(data) {
+  return Number(data?.session_count) > 0;
+}
+
+function buildSessionMetrics(data) {
+  return [
+    ['Liczba sesji', formatNumber(data.session_count), 'Sesje z aktywnością w zakresie'],
+    ['Średni czas aktywności', formatDuration(data.average_activity_duration_seconds), 'Między pierwszym i ostatnim zdarzeniem'],
+    ['Mediana czasu aktywności', formatDuration(data.median_activity_duration_seconds), 'Środkowa wartość czasu aktywności'],
+    ['Średnia zdarzeń na sesję', formatNumber(data.average_events_per_session), 'Zdarzenia w wybranym zakresie'],
+    ['Sesje z jednym zdarzeniem', formatNumber(data.single_event_session_count), 'Czas aktywności takiej sesji wynosi 0 s']
+  ];
+}
+
 function normalizeDemoShopPage(value) {
   const rawPath = typeof value === 'string' ? value.trim().replaceAll('\\', '/') : '';
   const pathWithoutParameters = rawPath.split(/[?#]/, 1)[0];
@@ -347,6 +375,11 @@ async function loadOverviewAnalytics(filters, request = authRequest, signal) {
   return { summary, sessions, activity, events, pages };
 }
 
+async function loadSessionAnalytics(filters, request = authRequest, signal) {
+  const query = buildDateQuery(filters.dateFrom, filters.dateTo);
+  return request(`/api/analytics/sessions${query}`, { signal });
+}
+
 async function authRequest(path, options = {}) {
   const controller = new AbortController();
   const externalSignal = options.signal;
@@ -473,6 +506,31 @@ function renderKpis(summary, sessions) {
   grid.append(sessionNote);
 }
 
+function renderSessionAnalytics(data) {
+  const grid = document.querySelector('#sessions-kpi-grid');
+  grid.replaceChildren();
+  buildSessionMetrics(data).forEach(([label, value, note]) => {
+    const card = document.createElement('article');
+    card.className = 'session-kpi-card';
+    const number = document.createElement('span');
+    number.className = 'session-kpi-number';
+    number.textContent = value;
+    const title = document.createElement('h3');
+    title.textContent = label;
+    const description = document.createElement('p');
+    description.textContent = note;
+    card.append(number, title, description);
+    grid.append(card);
+  });
+
+  const sessionCount = Math.max(0, Number(data.session_count) || 0);
+  const singleCount = Math.max(0, Number(data.single_event_session_count) || 0);
+  const share = calculateSingleEventShare(sessionCount, singleCount);
+  document.querySelector('#single-session-share').textContent = `${numberFormatter.format(share)}%`;
+  document.querySelector('#single-session-bar').style.width = `${share}%`;
+  document.querySelector('#single-session-detail').textContent = `${formatNumber(singleCount)} z ${formatNumber(sessionCount)} sesji`;
+}
+
 function renderActivity(rows) {
   const summary = document.querySelector('#activity-summary');
   const total = rows.reduce((sum, row) => sum + (Number(row.event_count) || 0), 0);
@@ -542,6 +600,7 @@ function setupDashboard() {
   const status = document.querySelector('#dashboard-status');
   const logout = document.querySelector('#logout-button');
   const overviewPanel = document.querySelector('#overview-panel');
+  const sessionsPanel = document.querySelector('#sessions-panel');
   const placeholderPanel = document.querySelector('#section-panel');
   const filterForm = document.querySelector('#date-filter');
   const dateFrom = document.querySelector('#date-from');
@@ -551,10 +610,20 @@ function setupDashboard() {
   const overviewError = document.querySelector('#overview-error');
   const overviewEmpty = document.querySelector('#overview-empty');
   const overviewContent = document.querySelector('#overview-content');
+  const sessionsFilterForm = document.querySelector('#sessions-date-filter');
+  const sessionsDateFrom = document.querySelector('#sessions-date-from');
+  const sessionsDateTo = document.querySelector('#sessions-date-to');
+  const sessionsFilterError = document.querySelector('#sessions-filter-error');
+  const sessionsLoading = document.querySelector('#sessions-loading');
+  const sessionsError = document.querySelector('#sessions-error');
+  const sessionsEmpty = document.querySelector('#sessions-empty');
+  const sessionsContent = document.querySelector('#sessions-content');
   let checking = false;
   let authenticated = false;
   let overviewController = null;
   let overviewRequestId = 0;
+  let sessionsController = null;
+  let sessionsRequestId = 0;
 
   function showOverviewState(state) {
     overviewLoading.hidden = state !== 'loading';
@@ -608,6 +677,54 @@ function setupDashboard() {
     }
   }
 
+  function showSessionsState(state) {
+    sessionsLoading.hidden = state !== 'loading';
+    sessionsError.hidden = state !== 'error';
+    sessionsEmpty.hidden = state !== 'empty';
+    sessionsContent.hidden = state !== 'content';
+  }
+
+  async function refreshSessions() {
+    if (!authenticated || window.location.hash !== '#sessions') return;
+    const validationError = validateDateRange(sessionsDateFrom.value, sessionsDateTo.value);
+    sessionsFilterError.hidden = !validationError;
+    sessionsFilterError.textContent = validationError;
+    if (validationError) return;
+
+    if (sessionsController) sessionsController.abort();
+    sessionsController = new AbortController();
+    const requestId = ++sessionsRequestId;
+    showSessionsState('loading');
+    sessionsFilterForm.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    try {
+      const data = await loadSessionAnalytics(
+        { dateFrom: sessionsDateFrom.value, dateTo: sessionsDateTo.value },
+        authRequest,
+        sessionsController.signal
+      );
+      if (requestId !== sessionsRequestId) return;
+      if (!hasSessionData(data)) {
+        showSessionsState('empty');
+        return;
+      }
+      renderSessionAnalytics(data);
+      showSessionsState('content');
+    } catch (error) {
+      if (requestId !== sessionsRequestId || error.name === 'AbortError') return;
+      if (error.status === 401) {
+        authenticated = false;
+        shell.hidden = true;
+        goToLogin();
+        return;
+      }
+      showSessionsState('error');
+    } finally {
+      if (requestId === sessionsRequestId) {
+        sessionsFilterForm.querySelectorAll('button').forEach(button => { button.disabled = false; });
+      }
+    }
+  }
+
   function showSection(moveFocus = false) {
     const requested = window.location.hash.slice(1);
     const key = Object.hasOwn(sections, requested) ? requested : 'overview';
@@ -620,7 +737,8 @@ function setupDashboard() {
     document.querySelector('#panel-description').textContent = section.detail;
     document.querySelector('#panel-symbol').setAttribute('href', `#icon-${key}`);
     overviewPanel.hidden = key !== 'overview';
-    placeholderPanel.hidden = key === 'overview';
+    sessionsPanel.hidden = key !== 'sessions';
+    placeholderPanel.hidden = key === 'overview' || key === 'sessions';
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
@@ -643,6 +761,7 @@ function setupDashboard() {
     });
     if (moveFocus && authenticated) title.focus();
     if (key === 'overview' && authenticated) refreshOverview();
+    if (key === 'sessions' && authenticated) refreshSessions();
   }
 
   async function checkSession() {
@@ -711,6 +830,17 @@ function setupDashboard() {
     refreshOverview();
   });
   document.querySelector('#overview-retry').addEventListener('click', refreshOverview);
+  sessionsFilterForm.addEventListener('submit', event => {
+    event.preventDefault();
+    refreshSessions();
+  });
+  document.querySelector('#sessions-clear-filter').addEventListener('click', () => {
+    sessionsDateFrom.value = '';
+    sessionsDateTo.value = '';
+    sessionsFilterError.hidden = true;
+    refreshSessions();
+  });
+  document.querySelector('#sessions-retry').addEventListener('click', refreshSessions);
   window.addEventListener('hashchange', () => {
     showSection(true);
     checkSession();
@@ -742,11 +872,16 @@ if (typeof module !== 'undefined' && module.exports) {
     buildDateQuery,
     buildEventsChartConfig,
     buildPagesChartConfig,
+    buildSessionMetrics,
+    calculateSingleEventShare,
     chartInstances,
     destroyChart,
     destroyCharts,
     formatNumber,
+    formatDuration,
+    hasSessionData,
     loadOverviewAnalytics,
+    loadSessionAnalytics,
     needsDashboardRender,
     normalizeDemoShopPage,
     replaceChart,

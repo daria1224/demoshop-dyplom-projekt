@@ -9,9 +9,14 @@ const {
   buildDateQuery,
   buildEventsChartConfig,
   buildPagesChartConfig,
+  buildSessionMetrics,
+  calculateSingleEventShare,
   chartInstances,
   destroyChart,
   destroyCharts,
+  formatDuration,
+  hasSessionData,
+  loadSessionAnalytics,
   loadOverviewAnalytics,
   needsDashboardRender,
   normalizeDemoShopPage,
@@ -32,6 +37,79 @@ test('validateDateRange odrzuca odwrócony zakres', () => {
   assert.equal(validateDateRange('2026-02-02', '2026-02-01'), 'Data „Od” nie może być późniejsza niż data „Do”.');
   assert.equal(validateDateRange('2026-02-01', '2026-02-01'), '');
   assert.equal(validateDateRange('', ''), '');
+});
+
+test('formatowanie czasu sesji obsługuje sekundy, minuty i wartości puste', () => {
+  assert.equal(formatDuration(0), '0 s');
+  assert.equal(formatDuration(45), '45 s');
+  assert.equal(formatDuration(60), '1 min');
+  assert.equal(formatDuration(135), '2 min 15 s');
+  assert.equal(formatDuration(undefined), '0 s');
+});
+
+test('metryki sesji odpowiadają polom API i czytelnie prezentują zera', () => {
+  const metrics = buildSessionMetrics({
+    session_count: 4,
+    average_activity_duration_seconds: 135,
+    median_activity_duration_seconds: 45,
+    average_events_per_session: 2.5,
+    single_event_session_count: 1
+  });
+  assert.deepEqual(metrics.map(metric => metric[1]), ['4', '2 min 15 s', '45 s', '2,5', '1']);
+
+  const emptyMetrics = buildSessionMetrics({});
+  assert.deepEqual(emptyMetrics.map(metric => metric[1]), ['0', '0 s', '0 s', '0', '0']);
+});
+
+test('udział sesji z jednym zdarzeniem nie dzieli przez zero', () => {
+  assert.equal(calculateSingleEventShare(4, 1), 25);
+  assert.equal(calculateSingleEventShare(3, 1), 33.3);
+  assert.equal(calculateSingleEventShare(0, 0), 0);
+  assert.equal(calculateSingleEventShare(undefined, undefined), 0);
+});
+
+test('pusta odpowiedź sesji jest rozpoznawana bez błędu', () => {
+  assert.equal(hasSessionData({ session_count: 1 }), true);
+  assert.equal(hasSessionData({ session_count: 0 }), false);
+  assert.equal(hasSessionData({}), false);
+  assert.equal(hasSessionData(null), false);
+});
+
+test('loadSessionAnalytics przekazuje filtry, błędy i sygnał anulowania', async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const result = await loadSessionAnalytics(
+    { dateFrom: '2026-02-01', dateTo: '2026-02-05' },
+    async (path, options) => {
+      calls.push([path, options.signal]);
+      return { session_count: 2 };
+    },
+    controller.signal
+  );
+  assert.equal(result.session_count, 2);
+  assert.equal(calls[0][0], '/api/analytics/sessions?date_from=2026-02-01&date_to=2026-02-05');
+  assert.equal(calls[0][1], controller.signal);
+
+  const unauthorized = Object.assign(new Error('unauthorized'), { status: 401 });
+  await assert.rejects(
+    loadSessionAnalytics({ dateFrom: '', dateTo: '' }, async () => { throw unauthorized; }),
+    error => error.status === 401
+  );
+
+  const delayedController = new AbortController();
+  const pending = loadSessionAnalytics(
+    { dateFrom: '', dateTo: '' },
+    (path, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        reject(error);
+      });
+    }),
+    delayedController.signal
+  );
+  delayedController.abort();
+  await assert.rejects(pending, error => error.name === 'AbortError');
 });
 
 test('konfiguracje Chart.js odwzorowują małe i puste zbiory', () => {
