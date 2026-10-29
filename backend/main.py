@@ -45,12 +45,58 @@ from backend.database import (
 )
 
 app = FastAPI()
-DASHBOARD_DIRECTORY = Path(__file__).resolve().parent.parent / "dashboard"
+PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
+DASHBOARD_DIRECTORY = PROJECT_DIRECTORY / "dashboard"
+app.mount(
+    "/css",
+    StaticFiles(directory=PROJECT_DIRECTORY / "css"),
+    name="shop-css",
+)
+app.mount(
+    "/js",
+    StaticFiles(directory=PROJECT_DIRECTORY / "js"),
+    name="shop-js",
+)
 app.mount(
     "/dashboard/assets",
     StaticFiles(directory=DASHBOARD_DIRECTORY / "assets"),
     name="dashboard-assets",
 )
+
+
+def public_shop_page(filename: str) -> FileResponse:
+    return FileResponse(PROJECT_DIRECTORY / filename)
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/index.html", include_in_schema=False)
+def shop_home_page():
+    return public_shop_page("index.html")
+
+
+@app.get("/products.html", include_in_schema=False)
+def shop_products_page():
+    return public_shop_page("products.html")
+
+
+@app.get("/product.html", include_in_schema=False)
+def shop_product_page():
+    return public_shop_page("product.html")
+
+
+@app.get("/cart.html", include_in_schema=False)
+def shop_cart_page():
+    return public_shop_page("cart.html")
+
+
+@app.get("/about.html", include_in_schema=False)
+def shop_about_page():
+    return public_shop_page("about.html")
+
+
+@app.get("/contact.html", include_in_schema=False)
+def shop_contact_page():
+    return public_shop_page("contact.html")
 
 
 @app.get("/dashboard/login", include_in_schema=False)
@@ -116,8 +162,8 @@ class OwnerLogin(BaseModel):
     password: str = Field(min_length=1, max_length=500)
 
 
-@app.get("/")
-def read_root():
+@app.get("/api/health")
+def read_health():
     return {"message": "DemoShop API działa"}
 
 

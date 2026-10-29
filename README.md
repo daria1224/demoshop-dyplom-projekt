@@ -105,7 +105,6 @@ OWNER_PASSWORD_HASH=<hash_Argon2_hasła>
 OWNER_SESSION_SECRET=<losowy_sekret_co_najmniej_32_znaki>
 OWNER_SESSION_TTL_SECONDS=1800
 AUTH_COOKIE_SECURE=false
-CORS_ALLOWED_ORIGINS=http://127.0.0.1:5500,http://localhost:5500
 ```
 
 Wstaw własny adres połączenia otrzymany od dostawcy PostgreSQL. Hash hasła można wygenerować lokalnie za pomocą `PasswordHasher` z biblioteki `argon2-cffi`; w konfiguracji zapisuje się wyłącznie wynik haszowania, nigdy jawne hasło. Sekret sesji powinien być losowy i niezależny od hasła. `AUTH_COOKIE_SECURE=false` jest dopuszczalne wyłącznie podczas pracy lokalnej przez HTTP — w środowisku HTTPS należy pozostawić wartość domyślną `true`. Opcjonalne `AUTH_ALLOWED_ORIGINS` jest potrzebne tylko dla zaufanego Dashboardu działającego w innym originie; zalecane jest obsługiwanie go przez ten sam serwer FastAPI. Plik `.env` jest ignorowany przez Git i nie powinien być publikowany.
@@ -127,25 +126,28 @@ Uruchom FastAPI z katalogu głównego projektu:
 python -m uvicorn backend.main:app --reload
 ```
 
-API będzie dostępne pod adresem `http://127.0.0.1:8000`, a interaktywna dokumentacja pod `http://127.0.0.1:8000/docs`.
+Jedna aplikacja będzie dostępna pod adresem `http://127.0.0.1:8000`. FastAPI udostępnia publiczny DemoShop, Dashboard i API w tym samym originie. Interaktywna dokumentacja API znajduje się pod `http://127.0.0.1:8000/docs`.
 
-Logowanie właściciela otwórz pod `http://127.0.0.1:8000/dashboard/login`, a panel pod `http://127.0.0.1:8000/dashboard`. Obie strony i ich zasoby obsługuje FastAPI; nie wymagają osobnego serwera frontendowego. W lokalnej konfiguracji HTTP potrzebne jest `AUTH_COOKIE_SECURE=false`. Dla HTTPS użyj `true`.
+Publiczny sklep otwórz pod `http://127.0.0.1:8000/`, logowanie właściciela pod `http://127.0.0.1:8000/dashboard/login`, a panel pod `http://127.0.0.1:8000/dashboard`. Strony i ich zasoby obsługuje FastAPI; nie wymagają osobnego serwera frontendowego. W lokalnej konfiguracji HTTP potrzebne jest `AUTH_COOKIE_SECURE=false`. Dla HTTPS użyj `true`.
 
-### 4. Frontend
+### 4. Publiczny DemoShop
 
-W drugim terminalu uruchom prosty serwer plików statycznych:
+Nie uruchamiaj osobnego serwera statycznego. Strony DemoShop korzystają ze względnego adresu `/api/events`, dlatego zdarzenia są wysyłane do tej samej aplikacji FastAPI i tego samego originu. Dostępne podstrony to:
 
-```powershell
-python -m http.server 5500
-```
-
-Otwórz `http://127.0.0.1:5500` w przeglądarce. Obecny frontend wysyła zdarzenia do lokalnego adresu `http://127.0.0.1:8000/api/events`.
+- `/` oraz `/index.html` — strona główna;
+- `/products.html` — produkty;
+- `/product.html?id=<identyfikator>` — szczegóły produktu;
+- `/cart.html` — koszyk;
+- `/about.html` — o nas;
+- `/contact.html` — kontakt.
 
 ## Endpointy API
 
 | Metoda | Ścieżka | Działanie |
 |---|---|---|
-| `GET` | `/` | Informacja o działaniu API |
+| `GET` | `/` i `/index.html` | Publiczna strona główna DemoShop |
+| `GET` | `/products.html`, `/product.html`, `/cart.html`, `/about.html`, `/contact.html` | Publiczne podstrony DemoShop |
+| `GET` | `/api/health` | Informacja o działaniu API |
 | `GET` | `/dashboard/login` | Strona logowania właściciela |
 | `GET` | `/dashboard` | Panel właściciela z pięcioma sekcjami nawigacji |
 | `GET` | `/api/db-test` | Kontrola połączenia z PostgreSQL |

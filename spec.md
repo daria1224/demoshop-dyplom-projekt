@@ -42,11 +42,11 @@ Statyczny frontend HTML, CSS i JavaScript udostępnia sześć podstron: główn�
 
 ### 3.2. Mechanizm zdarzeń
 
-Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą `POST` do `/api/events`. Nieudane połączenie albo odpowiedź HTTP 4xx/5xx jest raportowana w konsoli i nie blokuje działania sklepu. Zdarzenia nie są automatycznie ponawiane.
+Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą `POST` pod względny adres `/api/events`. DemoShop i API działają w jednym originie. Nieudane połączenie albo odpowiedź HTTP 4xx/5xx jest raportowana w konsoli i nie blokuje działania sklepu. Zdarzenia nie są automatycznie ponawiane.
 
 ### 3.3. FastAPI
 
-`backend/main.py` definiuje aplikację, model Pydantic oraz endpointy. Podstawowe pola zdarzenia są wymagane, a dodatkowe pola są akceptowane jako metadane. Znacznik czasu musi zawierać strefę czasową i jest normalizowany do UTC.
+`backend/main.py` definiuje aplikację, model Pydantic oraz endpointy. FastAPI udostępnia sześć dokumentów HTML DemoShop przez jawne trasy, katalogi `/css` i `/js` jako zasoby statyczne oraz Dashboard pod `/dashboard`. Katalog główny repozytorium nie jest montowany, dlatego pliki backendu, testów, dokumentacji i konfiguracji nie są publicznymi zasobami. Podstawowe pola zdarzenia są wymagane, a dodatkowe pola są akceptowane jako metadane. Znacznik czasu musi zawierać strefę czasową i jest normalizowany do UTC.
 
 ### 3.4. PostgreSQL Neon
 
@@ -101,7 +101,7 @@ działanie użytkownika
   → sessions / pages / event_types / events
   → zapytania agregujące
   → GET /api/analytics/*
-  → prezentacja w ukończonych sekcjach Przegląd, Sesje oraz Strony i interakcje lub planowanych pozostałych sekcjach Dashboardu
+  → prezentacja w pięciu ukończonych sekcjach Dashboardu
 ```
 
 ## 5. Model zdarzenia
@@ -178,7 +178,9 @@ Jedna sesja, strona i nazwa typu mogą być powiązane z wieloma zdarzeniami.
 
 | Metoda | Ścieżka | Stan | Wynik |
 |---|---|---|---|
-| `GET` | `/` | istnieje | komunikat kontrolny API |
+| `GET` | `/` i `/index.html` | istnieje | publiczna strona główna DemoShop |
+| `GET` | `/products.html`, `/product.html`, `/cart.html`, `/about.html`, `/contact.html` | istnieje | publiczne podstrony DemoShop |
+| `GET` | `/api/health` | istnieje | komunikat kontrolny API bez danych bazy |
 | `GET` | `/dashboard/login` | istnieje | publiczny formularz logowania |
 | `GET` | `/dashboard` | istnieje | interfejs właściciela; dane analityczne są pobierane po uwierzytelnieniu |
 | `GET` | `/api/db-test` | istnieje | informacja o połączeniu z bazą |
@@ -327,6 +329,6 @@ Przed wdrożeniem wymagane są dodatkowo HTTPS, ustawienie docelowych originów,
 
 ## 13. Możliwość wdrożenia chmurowego
 
-Backend może zostać później uruchomiony na platformie obsługującej Python i zmienne środowiskowe, a frontend na hostingu statycznym. Adres API frontendu, CORS, sekrety i HTTPS będą wymagały konfiguracji właściwej dla wybranego środowiska.
+Cała aplikacja może zostać później uruchomiona na platformie obsługującej Python i zmienne środowiskowe. Publiczny DemoShop, Dashboard i API są udostępniane przez jedną aplikację FastAPI oraz jeden origin. Frontend korzysta ze względnego `/api/events`, więc nie wymaga osobnej konfiguracji adresu API. Sekrety, HTTPS i ewentualne dodatkowe originy CORS nadal będą wymagały konfiguracji właściwej dla wybranego środowiska.
 
 Repozytorium nie zawiera obecnie Dockerfile, Terraform ani konfiguracji konkretnej platformy. Projekt nie został jeszcze opisany jako wdrożony produkcyjnie.

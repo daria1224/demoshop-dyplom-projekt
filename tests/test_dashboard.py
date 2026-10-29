@@ -2,6 +2,7 @@ import secrets
 import time
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from argon2 import PasswordHasher
@@ -65,6 +66,71 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(
             self.client.get("/dashboard/assets/.env").status_code, 404
         )
+
+    def test_public_shop_pages_and_assets_use_one_origin(self):
+        pages = {
+            "/": "DemoShop",
+            "/index.html": "DemoShop",
+            "/products.html": "Produkty",
+            "/product.html?id=kubek-aurora": "Produkt",
+            "/cart.html": "Koszyk",
+            "/about.html": "O nas",
+            "/contact.html": "Kontakt",
+        }
+        for path, expected_text in pages.items():
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("text/html", response.headers["content-type"])
+                self.assertIn(expected_text, response.text)
+
+        for path, content_type in (
+            ("/css/style.css", "text/css"),
+            ("/css/cart.css", "text/css"),
+            ("/js/products.js", "javascript"),
+            ("/js/main.js", "javascript"),
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(content_type, response.headers["content-type"])
+
+        health = self.client.get("/api/health")
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json(), {"message": "DemoShop API działa"})
+
+    def test_private_project_files_are_not_public(self):
+        for path in (
+            "/.env",
+            "/README.md",
+            "/spec.md",
+            "/requirements.txt",
+            "/backend/main.py",
+            "/backend/schema.sql",
+            "/tests/test_dashboard.py",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)
+
+    def test_shop_uses_relative_event_api_and_single_page_view_registration(self):
+        script = self.client.get("/js/main.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("fetch('/api/events'", script.text)
+        self.assertNotIn("127.0.0.1", script.text)
+        self.assertNotIn("localhost", script.text)
+        self.assertEqual(script.text.count("trackEvent('page_view'"), 1)
+
+        project_directory = Path(__file__).resolve().parent.parent
+        for page_name in (
+            "index.html",
+            "products.html",
+            "product.html",
+            "cart.html",
+            "about.html",
+            "contact.html",
+        ):
+            page = (project_directory / page_name).read_text(encoding="utf-8")
+            self.assertEqual(page.count('src="js/main.js"'), 1)
 
     def test_session_flow_and_cookie_path(self):
         self.assertFalse(self.client.get("/api/auth/status").json()["authenticated"])
