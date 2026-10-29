@@ -42,7 +42,7 @@ Statyczny frontend HTML, CSS i JavaScript udostępnia sześć podstron: główn�
 
 ### 3.2. Mechanizm zdarzeń
 
-Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą `POST` pod względny adres `/api/events`. DemoShop i API działają w jednym originie. Nieudane połączenie albo odpowiedź HTTP 4xx/5xx jest raportowana w konsoli i nie blokuje działania sklepu. Zdarzenia nie są automatycznie ponawiane.
+Funkcja `trackEvent()` buduje zdarzenie, zapisuje je w konsoli i wysyła metodą `POST` pod względny adres `/api/events`. DemoShop i API działają w jednym originie. Żądanie używa `keepalive: true`, co zwiększa szansę dostarczenia małego zdarzenia przy natychmiastowej nawigacji. Nieudane połączenie albo odpowiedź HTTP 4xx/5xx jest raportowana w konsoli i nie blokuje działania sklepu. Zdarzenia nie są automatycznie ponawiane, więc mechanizm nie tworzy celowo duplikatów, ale nie gwarantuje dostarczenia przy każdej awarii sieci lub zamknięciu procesu przeglądarki.
 
 ### 3.3. FastAPI
 
@@ -115,7 +115,7 @@ Każde zdarzenie zawiera pola podstawowe:
 | `page` | tekst | ścieżka aktualnej strony |
 | `timestamp` | ISO 8601 | czas zdarzenia ze strefą, normalizowany do UTC |
 
-Dodatkowe pola trafiają do `events.metadata` jako JSONB.
+Dodatkowe, dozwolone pola trafiają do `events.metadata` jako JSONB. Model Pydantic odrzuca pola spoza zamkniętej listy oraz metadane niepasujące do danego typu zdarzenia.
 
 | Typ zdarzenia | Moment rejestracji | Typowe metadane |
 |---|---|---|
@@ -126,6 +126,26 @@ Dodatkowe pola trafiają do `events.metadata` jako JSONB.
 | `form_submit` | poprawne zatwierdzenie demonstracyjnego formularza po walidacji klienta | `form` |
 
 Zdarzenie `form_submit` nie oznacza wysłania wiadomości do odbiorcy ani zapisania jej treści. Formularz jest wyłącznie demonstracyjny, a treść pól, imię i adres e-mail nie są przesyłane jako dane analityczne.
+
+### 5.1. Reguły walidacji publicznych zdarzeń
+
+- `session_token`: od 1 do 128 znaków;
+- `page`: od 1 do 512 znaków;
+- `title` i `product_name`: od 1 do 200 znaków;
+- `element` i `product_id`: od 1 do 100 znaków;
+- `destination`: od 1 do 512 znaków;
+- `cart_count`: liczba całkowita od 0 do 10 000;
+- `open`: wartość logiczna;
+- `form`: wyłącznie wartość `contact`;
+- `event_type`: wyłącznie pięć typów wymienionych w tabeli.
+
+`page_view` wymaga `title`; `click` wymaga `element`; `view_item` wymaga `product_id` i `product_name`; `add_to_cart` wymaga obu pól produktu oraz `cart_count`; `form_submit` wymaga `form`. Dodatkowe pola są odrzucane. Dzięki temu publiczny endpoint nie przyjmuje treści wiadomości, imienia, e-maila, hasła ani dowolnego obiektu JSON jako metadanych. Odpowiedź walidacyjna ma stałą treść i nie powtarza danych wejściowych.
+
+Timestamp musi zawierać strefę czasową i mieścić się w domkniętym przedziale ±7 dni względem aktualnego czasu serwera. Frontend tworzy go bezpośrednio przed wysłaniem przez `new Date().toISOString()`, dlatego siedmiodniowy margines toleruje niepoprawnie ustawiony zegar klienta i opóźnione dostarczenie, a jednocześnie odrzuca rażąco historyczne lub przyszłe dane. Poprawny czas jest normalizowany do UTC; backend nie zastępuje niepoprawnego czasu bieżącą wartością.
+
+Middleware dotyczący wyłącznie `POST /api/events` odrzuca kodem `413` ciało większe niż 16 KiB. Sprawdza `Content-Length`, a następnie liczy odebrane fragmenty i buforuje zaakceptowane ciało najwyżej do limitu. Limit wielokrotnie przewyższa obecne payloady, ale nie wpływa na logowanie i pozostałe endpointy. Warstwa aplikacji nie kontroluje rozmiaru pojedynczego fragmentu przekazanego już przez serwer ASGI, dlatego wdrożenie powinno zachować również limit żądania na zaufanym reverse proxy.
+
+Ten sam middleware stosuje pamięciowy limiter 120 zgłoszeń na 60 sekund dla adresu `request.client.host`. Zwykła seria interakcji pozostaje daleko poniżej limitu, a kolejne żądanie otrzymuje `429` i `Retry-After`. Operacja jest chroniona blokadą, wygasłe wpisy są usuwane, a liczba aktywnych tożsamości jest ograniczona do 4096. Tożsamość nie pochodzi z kontrolowanego przez odwiedzającego tokenu sesji ani z bezwarunkowo zaufanego `X-Forwarded-For`. Za reverse proxy właściwy adres klienta wymaga konfiguracji zaufanych proxy w serwerze ASGI. Stan nie jest współdzielony między procesami ani instancjami i nie zapewnia pełnej ochrony przed rozproszonym spamem.
 
 ## 6. Model sesji
 
@@ -304,13 +324,13 @@ Limiter atomowo rezerwuje próbę pod blokadą w jednym procesie. Suma nieudanyc
 
 Sesja jest bezstanowa: serwer weryfikuje podpis, wiek i właściciela bez zapisywania tokenu w bazie. Wylogowanie usuwa ciasteczko z bieżącej przeglądarki, lecz przechwyconej kopii poprawnie podpisanego tokenu nie można centralnie unieważnić przed upływem czasu ważności. Zmiana `OWNER_SESSION_SECRET` unieważnia wszystkie aktywne sesje. Limiter prób jest przechowywany w pamięci procesu, więc przy wielu instancjach wymagałby współdzielonego magazynu.
 
-Brak poprawnej konfiguracji zwraca 503 i nie otwiera dostępu do analityki. Brak lub nieważna sesja zwraca 401. `POST /api/events` pozostaje publiczny, natomiast `/api/db-test` wymaga sesji właściciela.
+Brak poprawnej konfiguracji zwraca 503 i nie otwiera dostępu do analityki. Brak lub nieważna sesja zwraca 401. `POST /api/events` pozostaje publiczny, ale podlega zamkniętej walidacji danych, limitowi 16 KiB, kontroli czasu i limiterowi częstotliwości. `/api/db-test` wymaga sesji właściciela.
 
 `GET /api/auth/status` zwraca wyłącznie `authenticated`: brak, wygaśnięcie lub niepoprawność sesji, a także brak konfiguracji dają wartość `false`. Mechanizm właściciela jest niezależny od 30-minutowego limitu bezczynności pseudonimowych sesji sklepu. System nie zawiera rejestracji, ról, odzyskiwania haseł ani kont klientów.
 
 Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.env` oraz nie łączą się z Neon. Sprawdzają logowanie, błędy walidacji, Unicode, współbieżne rezerwacje, odpowiedzi 429, usuwanie wygasłych wpisów, zwalnianie rezerwacji po błędzie konfiguracji, cookie, wylogowanie i ochronę tras.
 
-`tests/test_dashboard.py` sprawdza serwowanie HTML, lokalnego Chart.js i pozostałych zasobów, brak danych uwierzytelniających w HTML, zachowanie ścieżki cookie, logowanie i wylogowanie, wygaśnięcie sesji, dostępność istniejących dziewięciu tras, kontrakty endpointów używanych przez ukończone sekcje oraz przekazywanie filtrów dat. `tests/test_dashboard_ui.js` sprawdza budowę parametrów, walidację zakresu, konfiguracje wykresów Chart.js, niszczenie poprzednich instancji, formatowanie wskaźników sesji, sumowanie odsłon i kliknięć, normalizację stron, bezpieczne etykiety interakcji, puste dane, błędy `401` oraz anulowanie starszych żądań. Testy nie zapisują danych w Neon.
+`tests/test_dashboard.py` sprawdza serwowanie HTML, lokalnego Chart.js i pozostałych zasobów, brak danych uwierzytelniających w HTML, zachowanie ścieżki cookie, logowanie i wylogowanie, wygaśnięcie sesji, dostępność istniejących dziewięciu tras, kontrakty endpointów używanych przez ukończone sekcje oraz przekazywanie filtrów dat. `tests/test_events.py` używa kontrolowanego zegara i atrap zapisu do sprawdzania pięciu typów zdarzeń, metadanych, zakresu czasu, limitu rozmiaru i limitera częstotliwości. `tests/test_dashboard_ui.js` sprawdza logikę pięciu sekcji panelu, a `tests/test_shop_tracking.js` potwierdza pojedyncze żądanie `keepalive` bez ponowienia. Testy nie zapisują danych w Neon.
 
 ## 12. Bezpieczeństwo i ochrona danych
 
@@ -320,12 +340,13 @@ Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.en
 - zdarzenia są walidowane przez Pydantic;
 - identyfikator sesji jest pseudonimowy, nie zawiera danych bezpośrednio identyfikujących osobę, ale nie gwarantuje pełnej anonimowości;
 - formularz kontaktowy nie przesyła treści wiadomości ani danych kontaktowych do analityki;
+- publiczne zdarzenia mają zamkniętą listę typów i metadanych, limity długości, rozmiaru, czasu oraz częstotliwości;
 - błędy API nie ujawniają adresu połączenia z bazą;
 - czas jest zapisywany jako `TIMESTAMPTZ` i normalizowany do UTC;
 - odpowiedzi błędów logowania nie ujawniają, czy błędna była nazwa, czy hasło;
 - operacje logowania i wylogowania sprawdzają `Origin`, a ciasteczko używa `SameSite=Strict`.
 
-Przed wdrożeniem wymagane są dodatkowo HTTPS, ustawienie docelowych originów, trwały limiter odpowiedni dla liczby instancji, monitoring błędów i przegląd zasad retencji danych.
+Przed wdrożeniem wymagane są dodatkowo HTTPS, ustawienie docelowych originów i zaufanych proxy, limit ciała także na reverse proxy, monitoring błędów i przegląd zasad retencji danych. Przy wielu procesach lub instancjach pamięciowy limiter wymagałby współdzielonego magazynu; obecne rozwiązanie jest proporcjonalną ochroną demonstracyjną, nie gwarancją wyeliminowania spamu.
 
 ## 13. Możliwość wdrożenia chmurowego
 

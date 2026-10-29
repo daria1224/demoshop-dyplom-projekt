@@ -1,5 +1,9 @@
-from datetime import date, datetime, timezone
+from collections import OrderedDict, deque
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+import threading
+import time
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -15,7 +19,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.auth import (
     authenticate_owner,
@@ -47,6 +51,108 @@ from backend.database import (
 app = FastAPI()
 PROJECT_DIRECTORY = Path(__file__).resolve().parent.parent
 DASHBOARD_DIRECTORY = PROJECT_DIRECTORY / "dashboard"
+EVENT_REQUEST_MAX_BYTES = 16 * 1024
+EVENT_RATE_LIMIT = 120
+EVENT_RATE_WINDOW_SECONDS = 60
+EVENT_RATE_MAX_CLIENTS = 4096
+EVENT_TIMESTAMP_TOLERANCE = timedelta(days=7)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class EventRateLimiter:
+    def __init__(self, limit: int, window_seconds: int, max_clients: int):
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self.max_clients = max_clients
+        self._requests: OrderedDict[str, deque[float]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def check(self, client_id: str, now: float | None = None) -> int | None:
+        current_time = time.monotonic() if now is None else now
+        cutoff = current_time - self.window_seconds
+
+        with self._lock:
+            for key in list(self._requests):
+                requests = self._requests[key]
+                while requests and requests[0] <= cutoff:
+                    requests.popleft()
+                if not requests:
+                    del self._requests[key]
+
+            requests = self._requests.get(client_id)
+            if requests is None:
+                if len(self._requests) >= self.max_clients:
+                    self._requests.popitem(last=False)
+                requests = deque()
+                self._requests[client_id] = requests
+            else:
+                self._requests.move_to_end(client_id)
+
+            if len(requests) >= self.limit:
+                retry_after = max(
+                    1,
+                    int(requests[0] + self.window_seconds - current_time) + 1,
+                )
+                return retry_after
+
+            requests.append(current_time)
+            return None
+
+    def clear(self) -> None:
+        with self._lock:
+            self._requests.clear()
+
+
+event_rate_limiter = EventRateLimiter(
+    EVENT_RATE_LIMIT,
+    EVENT_RATE_WINDOW_SECONDS,
+    EVENT_RATE_MAX_CLIENTS,
+)
+
+
+@app.middleware("http")
+async def protect_public_event_endpoint(request: Request, call_next):
+    if request.method == "POST" and request.url.path.rstrip("/") == "/api/events":
+        client_id = request.client.host if request.client else "unknown"
+        retry_after = event_rate_limiter.check(client_id)
+        if retry_after is not None:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Przekroczono limit zgłoszeń zdarzeń."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                parsed_content_length = int(content_length)
+                if parsed_content_length < 0:
+                    raise ValueError
+                if parsed_content_length > EVENT_REQUEST_MAX_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Żądanie zdarzenia jest zbyt duże."},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Nieprawidłowy nagłówek Content-Length."},
+                )
+
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > EVENT_REQUEST_MAX_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Żądanie zdarzenia jest zbyt duże."},
+                )
+            body.extend(chunk)
+        request._body = bytes(body)
+
+    return await call_next(request)
 app.mount(
     "/css",
     StaticFiles(directory=PROJECT_DIRECTORY / "css"),
@@ -122,6 +228,11 @@ async def handle_request_validation(request: Request, error: RequestValidationEr
             status_code=422,
             content={"detail": "Nieprawidłowa struktura danych logowania."},
         )
+    if request.url.path.rstrip("/") == "/api/events":
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Nieprawidłowe dane zdarzenia."},
+        )
     return await request_validation_exception_handler(request, error)
 
 
@@ -140,10 +251,26 @@ analytics_router = APIRouter(
 
 
 class Event(BaseModel):
-    session_token: str
-    event_type: str
-    page: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    session_token: str = Field(min_length=1, max_length=128)
+    event_type: Literal[
+        "page_view",
+        "click",
+        "view_item",
+        "add_to_cart",
+        "form_submit",
+    ]
+    page: str = Field(min_length=1, max_length=512)
     timestamp: datetime
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    element: str | None = Field(default=None, min_length=1, max_length=100)
+    destination: str | None = Field(default=None, min_length=1, max_length=512)
+    product_id: str | None = Field(default=None, min_length=1, max_length=100)
+    product_name: str | None = Field(default=None, min_length=1, max_length=200)
+    open: bool | None = None
+    cart_count: int | None = Field(default=None, ge=0, le=10_000)
+    form: Literal["contact"] | None = None
 
     @field_validator("timestamp")
     @classmethod
@@ -151,10 +278,57 @@ class Event(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("timestamp musi zawierać informację o strefie czasowej")
 
-        return value.astimezone(timezone.utc)
+        normalized = value.astimezone(timezone.utc)
+        now = utc_now()
+        if abs(normalized - now) > EVENT_TIMESTAMP_TOLERANCE:
+            raise ValueError(
+                "timestamp musi mieścić się w zakresie 7 dni od czasu serwera"
+            )
 
-    class Config:
-        extra = "allow"
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_metadata_for_event_type(self):
+        metadata_fields = {
+            "title",
+            "element",
+            "destination",
+            "product_id",
+            "product_name",
+            "open",
+            "cart_count",
+            "form",
+        }
+        present = {
+            name for name in metadata_fields if getattr(self, name) is not None
+        }
+        allowed = {
+            "page_view": {"title"},
+            "click": {
+                "element",
+                "destination",
+                "product_id",
+                "product_name",
+                "open",
+            },
+            "view_item": {"product_id", "product_name"},
+            "add_to_cart": {"product_id", "product_name", "cart_count"},
+            "form_submit": {"form"},
+        }[self.event_type]
+        required = {
+            "page_view": {"title"},
+            "click": {"element"},
+            "view_item": {"product_id", "product_name"},
+            "add_to_cart": {"product_id", "product_name", "cart_count"},
+            "form_submit": {"form"},
+        }[self.event_type]
+
+        if not present <= allowed:
+            raise ValueError("Niedozwolone metadane dla tego typu zdarzenia")
+        if not required <= present:
+            raise ValueError("Brak wymaganych metadanych dla tego typu zdarzenia")
+
+        return self
 
 
 class OwnerLogin(BaseModel):
@@ -405,7 +579,7 @@ def get_owner_authentication_status(request: Request):
 
 @app.post("/api/events")
 def receive_event(event: Event):
-    event_data = event.dict()
+    event_data = event.model_dump(exclude_none=True)
     required_fields = {"session_token", "event_type", "page", "timestamp"}
     metadata = {
         key: value

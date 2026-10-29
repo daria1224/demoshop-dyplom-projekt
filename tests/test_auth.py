@@ -2,6 +2,7 @@ import secrets
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from argon2 import PasswordHasher
@@ -41,6 +42,7 @@ class AuthTests(unittest.TestCase):
     def setUp(self):
         auth._failed_attempts.clear()
         auth._pending_attempts.clear()
+        main.event_rate_limiter.clear()
         self.settings_patch = patch.object(
             auth, "get_auth_settings", return_value=self.settings
         )
@@ -95,10 +97,13 @@ class AuthTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
         self.assertNotIn(marker, response.text)
-        # Pozostałe endpointy zachowują standardowy format walidacji.
+        # Publiczny endpoint zdarzeń również nie powtarza danych wejściowych.
         response = self.client.post("/api/events", json={})
         self.assertEqual(response.status_code, 422)
-        self.assertIsInstance(response.json()["detail"], list)
+        self.assertEqual(
+            response.json(),
+            {"detail": "Nieprawidłowe dane zdarzenia."},
+        )
 
     def test_cookie_logout_and_api(self):
         paths = [
@@ -123,7 +128,8 @@ class AuthTests(unittest.TestCase):
                 "session_token": "isolated-test",
                 "event_type": "page_view",
                 "page": "/",
-                "timestamp": "2026-10-26T10:00:00Z",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "title": "Strona główna",
             })
             self.assertEqual(response.status_code, 200)
             save.assert_called_once()

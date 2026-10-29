@@ -70,7 +70,10 @@ demoshop/
 │   └── products.js       # demonstracyjny katalog produktów
 ├── tests/
 │   ├── test_auth.py      # izolowane testy uwierzytelniania
-│   └── test_dashboard.py # strony, zasoby i integracja sesji panelu
+│   ├── test_dashboard.py # strony, zasoby i integracja sesji panelu
+│   ├── test_events.py    # ochrona publicznego endpointu zdarzeń
+│   ├── test_dashboard_ui.js # logika pięciu sekcji Dashboardu
+│   └── test_shop_tracking.js # wysyłanie zdarzeń przez sklep
 ├── about.html
 ├── cart.html
 ├── contact.html
@@ -175,6 +178,12 @@ Lejek analizuje unikalne pary `(session_id, product_id)`. Para jest liczona jako
 
 Wszystkie endpointy `/api/analytics/*` oraz diagnostyczny `/api/db-test` wymagają ważnej sesji właściciela. `POST /api/events` pozostaje publiczny, aby demonstracyjny sklep mógł rejestrować aktywność odwiedzających.
 
+Publiczny endpoint zdarzeń przyjmuje wyłącznie typy `page_view`, `click`, `view_item`, `add_to_cart` i `form_submit` oraz kontrolowany zestaw metadanych rzeczywiście generowanych przez DemoShop. Pola tekstowe mają limity długości, całe żądanie może mieć najwyżej 16 KiB, a timestamp ze strefą czasową musi mieścić się w zakresie siedmiu dni przed lub po czasie serwera. Czas jest następnie normalizowany do UTC. Nieprawidłowe zdarzenie otrzymuje bezpieczny komunikat `422`, bez powtarzania danych wejściowych. Treść wiadomości, imię i adres e-mail z formularza kontaktowego nie należą do dopuszczalnych metadanych.
+
+Pamięciowy limiter dopuszcza do 120 zgłoszeń zdarzeń na 60 sekund dla adresu bezpośredniego klienta i zwraca `429` z `Retry-After` po przekroczeniu limitu. Przechowuje najwyżej 4096 aktywnych wpisów i usuwa wpisy po wygaśnięciu okna. Nie ufa nagłówkowi `X-Forwarded-For`; za reverse proxy serwer ASGI musi otrzymać poprawnie skonfigurowany adres klienta wyłącznie od zaufanego proxy. Limiter działa w obrębie jednego procesu, nie jest współdzielony między instancjami i ogranicza prosty nadmierny ruch, ale nie stanowi pełnej ochrony przed rozproszonym spamem.
+
+Frontend wysyła małe zdarzenia przez `fetch()` z `keepalive: true`. Zmniejsza to ryzyko anulowania kliknięcia podczas natychmiastowej nawigacji, bez opóźniania przejścia i bez automatycznych ponowień, które mogłyby tworzyć duplikaty. Przeglądarka nadal może utracić zdarzenie przy awarii sieci lub zamknięciu procesu.
+
 Sesja logowania jest przechowywana w podpisanym ciasteczku `HttpOnly` z `SameSite=Strict`, ścieżką `/api` i ograniczonym czasem ważności. W HTTPS ciasteczko ma flagę `Secure`. Logowanie i wylogowanie sprawdzają nagłówek `Origin`, a błędne próby logowania podlegają prostemu limitowi w pamięci procesu.
 
 Logowanie przyjmuje JSON z polami `username` i `password`. Login obsługuje Unicode, w tym polskie znaki. Błędne dane uwierzytelniające zwracają `401`, niepoprawna struktura żądania zwraca `422` ze stałym komunikatem bez danych wejściowych, a niedozwolony lub brakujący `Origin` powoduje `403`. Brak wymaganej konfiguracji zamyka dostęp do analityki kodem `503`. Endpoint stanu zwraca `{"authenticated": false}` również wtedy, gdy konfiguracja jest niedostępna.
@@ -215,7 +224,7 @@ W środowisku testowym z zainstalowanymi zależnościami backendu i biblioteką 
 python -m unittest discover -s tests -p test_auth.py -v
 ```
 
-Wszystkie testy backendu i integracji Dashboardu uruchamia polecenie `python -m unittest discover -s tests -v`. Pomocnicze funkcje interfejsu Przeglądu sprawdza `node --test tests/test_dashboard_ui.js`.
+Wszystkie testy backendu i integracji Dashboardu uruchamia polecenie `python -m unittest discover -s tests -v`. Logikę interfejsu i wysyłanie zdarzeń sprawdza `node --test tests/test_dashboard_ui.js tests/test_shop_tracking.js`.
 
 Testy używają generowanych w pamięci danych i atrap konfiguracji oraz zapisu. Nie odczytują `.env` ani nie zapisują rekordów do Neon. Obejmują walidację bez ujawniania hasła, Unicode, równoczesne próby, limit i wygasanie wpisów, cookie, wylogowanie oraz ochronę API.
 
@@ -232,6 +241,8 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 - zdarzenia `page_view`, `click`, `view_item`, `add_to_cart` i `form_submit`;
 - pseudonimowe sesje z limitem 30 minut bez aktywności;
 - wysyłanie zdarzeń przez `fetch()` i obsługa błędów HTTP;
+- `keepalive` dla małych żądań zdarzeń, bez automatycznych ponowień;
+- zamknięta walidacja typów i metadanych, limit 16 KiB oraz pamięciowy limiter publicznego endpointu;
 - walidacja znaczników czasu i normalizacja do UTC;
 - zapis sesji, stron, typów zdarzeń i metadanych w PostgreSQL;
 - podstawowe agregacje analityczne;

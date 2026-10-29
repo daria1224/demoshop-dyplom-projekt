@@ -116,6 +116,7 @@ class DashboardTests(unittest.TestCase):
         script = self.client.get("/js/main.js")
         self.assertEqual(script.status_code, 200)
         self.assertIn("fetch('/api/events'", script.text)
+        self.assertIn("keepalive: true", script.text)
         self.assertNotIn("127.0.0.1", script.text)
         self.assertNotIn("localhost", script.text)
         self.assertEqual(script.text.count("trackEvent('page_view'"), 1)

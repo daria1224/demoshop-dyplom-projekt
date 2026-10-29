@@ -48,7 +48,8 @@ function trackEvent(eventType, details = {}) {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(apiEvent)
+    body: JSON.stringify(apiEvent),
+    keepalive: true
   })
     .then(response => {
       if (!response.ok) {
