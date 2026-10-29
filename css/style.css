@@ -349,6 +349,9 @@ h2 {
   padding: 35px 0 90px;
   align-items: center
 }
+.product-detail.product-detail-not-found {
+  grid-template-columns: 1fr;
+}
 .product-illustration.large {
   height: 440px;
   border-radius: var(--radius)

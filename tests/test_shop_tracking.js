@@ -9,9 +9,19 @@ const script = fs.readFileSync(
   'utf8'
 );
 
-function trackingContext() {
+function trackingContext({ pathname = '/products.html', search = '', products = [] } = {}) {
   const requests = [];
   const storage = new Map();
+  const classes = new Set();
+  const productDetail = {
+    innerHTML: '',
+    classList: {
+      add(value) { classes.add(value); },
+      remove(value) { classes.delete(value); },
+      contains(value) { return classes.has(value); }
+    }
+  };
+  const breadcrumb = { textContent: '' };
   const context = {
     console: { log() {}, error() {} },
     fetch(url, options) {
@@ -24,20 +34,24 @@ function trackingContext() {
     },
     window: {
       crypto: { randomUUID: () => 'test-session-token' },
-      location: { pathname: '/products.html' }
+      location: { pathname, search }
     },
     document: {
       addEventListener() {},
-      querySelector() { return null; },
+      querySelector(selector) {
+        if (selector === '.product-detail') return productDetail;
+        if (selector === '.breadcrumb-product') return breadcrumb;
+        return null;
+      },
       querySelectorAll() { return []; },
-      title: 'Produkty — DemoShop'
+      title: 'Produkt — DemoShop'
     },
     URLSearchParams,
-    products: []
+    products
   };
   vm.createContext(context);
   vm.runInContext(script, context);
-  return { context, requests };
+  return { breadcrumb, context, productDetail, requests };
 }
 
 test('navigation click uses one keepalive request without retry', async () => {
@@ -64,4 +78,60 @@ test('navigation click uses one keepalive request without retry', async () => {
       destination: 'cart.html'
     }
   );
+});
+
+const aurora = {
+  id: 'kubek-aurora',
+  name: 'Kubek Aurora',
+  price: 49,
+  category: 'Dom',
+  color: 'peach',
+  description: 'Ceramiczny kubek.'
+};
+
+test('existing product renders and records one view_item', () => {
+  const { context, productDetail, requests } = trackingContext({
+    pathname: '/product.html',
+    search: '?id=kubek-aurora',
+    products: [aurora]
+  });
+
+  context.renderProductDetail();
+
+  assert.match(productDetail.innerHTML, /Kubek Aurora/);
+  assert.match(productDetail.innerHTML, /add-to-cart/);
+  assert.equal(requests.length, 1);
+  const event = JSON.parse(requests[0].options.body);
+  assert.equal(event.event_type, 'view_item');
+  assert.equal(event.product_id, 'kubek-aurora');
+});
+
+test('unknown product shows a message without view_item or cart button', () => {
+  const { breadcrumb, context, productDetail, requests } = trackingContext({
+    pathname: '/product.html',
+    search: '?id=nieistniejacy-produkt',
+    products: [aurora]
+  });
+
+  context.renderProductDetail();
+
+  assert.match(productDetail.innerHTML, /Nie znaleziono produktu/);
+  assert.match(productDetail.innerHTML, /Wróć do produktów/);
+  assert.doesNotMatch(productDetail.innerHTML, /add-to-cart/);
+  assert.equal(breadcrumb.textContent, 'Nie znaleziono produktu');
+  assert.equal(productDetail.classList.contains('product-detail-not-found'), true);
+  assert.equal(requests.length, 0);
+});
+
+test('missing product id keeps the existing default product behavior', () => {
+  const { context, productDetail, requests } = trackingContext({
+    pathname: '/product.html',
+    products: [aurora]
+  });
+
+  context.renderProductDetail();
+
+  assert.match(productDetail.innerHTML, /Kubek Aurora/);
+  assert.equal(requests.length, 1);
+  assert.equal(JSON.parse(requests[0].options.body).event_type, 'view_item');
 });

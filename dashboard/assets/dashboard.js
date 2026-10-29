@@ -3,58 +3,23 @@
 const sections = {
   overview: {
     title: 'Przegląd',
-    description: 'Miejsce, w którym aktywność odwiedzających nabiera znaczenia.',
-    heading: 'Aktywność w jednym miejscu',
-    detail: 'Tutaj pojawi się podsumowanie aktywności odwiedzających Twój sklep.',
-    topics: [
-      ['Podstawowe wskaźniki', 'Podsumowanie zdarzeń i zarejestrowanych sesji.'],
-      ['Aktywność w czasie', 'Przebieg interakcji w kolejnych dniach.'],
-      ['Najważniejsze obszary', 'Punkty wyjścia do szczegółowych zestawień.']
-    ]
+    description: 'Miejsce, w którym aktywność odwiedzających nabiera znaczenia.'
   },
   sessions: {
     title: 'Sesje',
-    description: 'Zrozum, jak przebiegają zarejestrowane wizyty w DemoShop.',
-    heading: 'Przebieg sesji',
-    detail: 'Tutaj pojawią się zestawienia sesji i czasu zarejestrowanej aktywności.',
-    topics: [
-      ['Liczba sesji', 'Sesje zawierające co najmniej jedno zdarzenie.'],
-      ['Czas aktywności', 'Odstęp między pierwszym a ostatnim zdarzeniem sesji.'],
-      ['Zaangażowanie', 'Liczba zdarzeń przypadających na sesję.']
-    ]
+    description: 'Zrozum, jak przebiegają zarejestrowane wizyty w DemoShop.'
   },
   pages: {
     title: 'Strony i interakcje',
-    description: 'Poznaj miejsca i elementy, z którymi wchodzą w interakcję odwiedzający.',
-    heading: 'Ścieżki i kliknięcia',
-    detail: 'Tutaj pojawią się zestawienia odsłon stron i klikanych elementów interfejsu.',
-    topics: [
-      ['Popularne podstrony', 'Odsłony zarejestrowane jako page_view.'],
-      ['Klikane elementy', 'Interakcje z nawigacją i przyciskami.'],
-      ['Kontekst interakcji', 'Strona i cel wybranego działania.']
-    ]
+    description: 'Poznaj miejsca i elementy, z którymi wchodzą w interakcję odwiedzający.'
   },
   products: {
     title: 'Produkty',
-    description: 'Przyjrzyj się zainteresowaniu demonstracyjnym katalogiem produktów.',
-    heading: 'Zainteresowanie produktami',
-    detail: 'Tutaj pojawią się zestawienia wyświetleń produktów i dodań do koszyka.',
-    topics: [
-      ['Wyświetlenia produktów', 'Otwarcia stron szczegółów produktu.'],
-      ['Dodania do koszyka', 'Zarejestrowane działania add_to_cart.'],
-      ['Lejek interakcji', 'Przejścia od wyświetlenia produktu do jego dodania.']
-    ]
+    description: 'Przyjrzyj się zainteresowaniu demonstracyjnym katalogiem produktów.'
   },
   events: {
     title: 'Zdarzenia',
-    description: 'Zobacz, jakie działania składają się na aktywność w serwisie.',
-    heading: 'Historia aktywności',
-    detail: 'Tutaj pojawią się historia ostatnich zdarzeń i zestawienie ich typów.',
-    topics: [
-      ['Ostatnie zdarzenia', 'Chronologiczny przegląd zarejestrowanych działań.'],
-      ['Typy zdarzeń', 'Odsłony, kliknięcia i pozostałe interakcje.'],
-      ['Kontekst zdarzenia', 'Podstrona oraz powiązany element lub produkt.']
-    ]
+    description: 'Zobacz, jakie działania składają się na aktywność w serwisie.'
   }
 };
 
@@ -1020,7 +985,6 @@ function setupDashboard() {
   const pagesPanel = document.querySelector('#pages-panel');
   const productsPanel = document.querySelector('#products-panel');
   const recentEventsPanel = document.querySelector('#recent-events-panel');
-  const placeholderPanel = document.querySelector('#section-panel');
   const filterForm = document.querySelector('#date-filter');
   const dateFrom = document.querySelector('#date-from');
   const dateTo = document.querySelector('#date-to');
@@ -1346,34 +1310,15 @@ function setupDashboard() {
     const title = document.querySelector('#section-title');
     title.textContent = section.title;
     document.querySelector('#section-description').textContent = section.description;
-    document.querySelector('#panel-title').textContent = section.heading;
-    document.querySelector('#panel-description').textContent = section.detail;
-    document.querySelector('#panel-symbol').setAttribute('href', `#icon-${key}`);
     overviewPanel.hidden = key !== 'overview';
     sessionsPanel.hidden = key !== 'sessions';
     pagesPanel.hidden = key !== 'pages';
     productsPanel.hidden = key !== 'products';
     recentEventsPanel.hidden = key !== 'events';
-    placeholderPanel.hidden = ['overview', 'sessions', 'pages', 'products', 'events'].includes(key);
     document.title = `${section.title} — DemoShop Analytics`;
     document.querySelectorAll('[data-section]').forEach(link => {
       if (link.dataset.section === key) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
-    });
-    const topics = document.querySelector('#section-topics');
-    topics.replaceChildren();
-    section.topics.forEach(([heading, description], index) => {
-      const card = document.createElement('article');
-      card.className = 'topic-card';
-      const number = document.createElement('span');
-      number.className = 'topic-number';
-      number.textContent = `0${index + 1}`;
-      const cardTitle = document.createElement('h3');
-      cardTitle.textContent = heading;
-      const detail = document.createElement('p');
-      detail.textContent = description;
-      card.append(number, cardTitle, detail);
-      topics.append(card);
     });
     if (moveFocus && authenticated) title.focus();
     if (key === 'overview' && authenticated) refreshOverview();

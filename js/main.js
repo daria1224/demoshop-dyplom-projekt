@@ -41,14 +41,12 @@ function trackEvent(eventType, details = {}) {
   };
   console.log('[DemoShop event]', event);
 
-  const apiEvent = { ...event };
-
   fetch('/api/events', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(apiEvent),
+    body: JSON.stringify(event),
     keepalive: true
   })
     .then(response => {
@@ -171,8 +169,23 @@ function renderProductDetail() {
   if (!target) return;
 
   const id = new URLSearchParams(window.location.search).get('id');
-  const product = products.find(item => item.id === id) || products[0];
+  const product = id ? products.find(item => item.id === id) : products[0];
 
+  if (!product) {
+    document.title = 'Nie znaleziono produktu — DemoShop';
+    document.querySelector('.breadcrumb-product').textContent = 'Nie znaleziono produktu';
+    target.classList.add('product-detail-not-found');
+    target.innerHTML = `
+      <div class="empty-cart">
+        <h1>Nie znaleziono produktu</h1>
+        <p>Wybrany produkt nie istnieje lub został usunięty.</p>
+        <a class="button" href="products.html">Wróć do produktów</a>
+      </div>
+    `;
+    return;
+  }
+
+  target.classList.remove('product-detail-not-found');
   document.title = `${product.name} — DemoShop`;
   document.querySelector('.breadcrumb-product').textContent = product.name;
   target.innerHTML = `

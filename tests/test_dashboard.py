@@ -67,6 +67,13 @@ class DashboardTests(unittest.TestCase):
             self.client.get("/dashboard/assets/.env").status_code, 404
         )
 
+        dashboard = self.client.get("/dashboard").text
+        script = self.client.get("/dashboard/assets/dashboard.js").text
+        self.assertNotIn('id="section-panel"', dashboard)
+        self.assertNotIn("section-topics", dashboard)
+        self.assertNotIn("placeholderPanel", script)
+        self.assertNotIn("section.topics", script)
+
     def test_public_shop_pages_and_assets_use_one_origin(self):
         pages = {
             "/": "DemoShop",
