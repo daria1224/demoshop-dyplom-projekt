@@ -4,7 +4,7 @@
 
 DemoShop jest demonstracyjnym systemem przygotowanym na potrzeby pracy dyplomowej „Projekt i implementacja systemu analizy aktywności użytkowników strony internetowej z wykorzystaniem technologii chmurowych”.
 
-System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową sesją, przesyłanie zdarzeń do API, ich walidację i zapis w PostgreSQL oraz udostępnianie podstawowych agregacji analitycznych. Docelowo agregacje zostaną zaprezentowane w chronionym panelu właściciela.
+System umożliwia rejestrowanie aktywności powiązanej z pseudonimową sesją, przesyłanie zdarzeń do API, ich walidację i zapis w PostgreSQL oraz prezentowanie agregacji w chronionym panelu właściciela.
 
 ## 2. Zakres i wymagania
 
@@ -19,13 +19,14 @@ System ma umożliwiać rejestrowanie aktywności powiązanej z pseudonimową ses
 - statystyki sesji, ranking kliknięć, historia ostatnich zdarzeń i lejek produktów;
 - opcjonalne filtry dat dla zestawień analitycznych;
 - uwierzytelnianie jednego właściciela i ochrona API analitycznego;
-- strona logowania i responsywny Dashboard z pięcioma ukończonymi sekcjami.
+- strona logowania i responsywny Dashboard z pięcioma ukończonymi sekcjami;
+- wdrożenie jednej aplikacji FastAPI na Render z zewnętrzną bazą Neon PostgreSQL.
 
-### Funkcjonalności planowane w ramach pracy dyplomowej
+### Możliwy dalszy rozwój
 
-- wykresy, tabele i filtry danych w Dashboardzie;
-- rozbudowana analityka, filtry i wizualizacje;
-- wdrożenie systemu w środowisku chmurowym.
+- dodatkowe wskaźniki i wizualizacje;
+- bardziej szczegółowe filtry analityczne;
+- monitoring błędów i zdefiniowana polityka retencji danych.
 
 ### Funkcjonalności poza zakresem projektu
 
@@ -88,7 +89,19 @@ Kontrola ważności sesji jest wykonywana co 60 sekund w widocznej karcie, ale n
 
 `backend/auth.py` realizuje uwierzytelnianie jednego właściciela bez tabel kont. Nazwa właściciela, hash Argon2 hasła oraz sekret podpisu znajdują się w zmiennych środowiskowych. Po poprawnym logowaniu backend ustawia podpisane, czasowe ciasteczko `HttpOnly`. Wspólna zależność routera chroni wszystkie `/api/analytics/*`, a osobna zależność chroni `/api/db-test`.
 
+### 3.7. Render i GitHub
+
+Render udostępnia jedną aplikację FastAPI przez HTTPS i jeden publiczny origin. GitHub przechowuje kod oraz stanowi źródło wdrożenia Web Service. FastAPI obsługuje sklep, Dashboard i API, natomiast Neon pozostaje zewnętrzną usługą PostgreSQL. Konfiguracja i sekrety są przekazywane przez zmienne środowiskowe Render, a nie przechowywane w repozytorium.
+
 ## 4. Przepływ danych
+
+Skrócony przepływ w architekturze chmurowej:
+
+```text
+Przeglądarka → DemoShop JavaScript → FastAPI → Neon PostgreSQL → API analityczne → Dashboard
+```
+
+DemoShop JavaScript rejestruje pięć typów zdarzeń. FastAPI działające na Render waliduje je, zapisuje przez psycopg i udostępnia chronione agregacje. Dashboard, również serwowany przez FastAPI, pobiera wyniki z API analitycznego. Neon przechowuje dane i wykonuje agregacje SQL.
 
 ```text
 działanie użytkownika
@@ -346,10 +359,37 @@ Testy w `tests/test_auth.py` izolują konfigurację i zapis, nie odczytują `.en
 - odpowiedzi błędów logowania nie ujawniają, czy błędna była nazwa, czy hasło;
 - operacje logowania i wylogowania sprawdzają `Origin`, a ciasteczko używa `SameSite=Strict`.
 
-Przed wdrożeniem wymagane są dodatkowo HTTPS, ustawienie docelowych originów i zaufanych proxy, limit ciała także na reverse proxy, monitoring błędów i przegląd zasad retencji danych. Przy wielu procesach lub instancjach pamięciowy limiter wymagałby współdzielonego magazynu; obecne rozwiązanie jest proporcjonalną ochroną demonstracyjną, nie gwarancją wyeliminowania spamu.
+Wdrożenie wykorzystuje HTTPS i zaufane nagłówki reverse proxy platformy Render. Dalszego dopracowania mogą wymagać monitoring błędów i zasady retencji danych. Przy wielu procesach lub instancjach pamięciowy limiter wymagałby współdzielonego magazynu; obecne rozwiązanie jest proporcjonalną ochroną demonstracyjną, nie gwarancją wyeliminowania spamu.
 
-## 13. Możliwość wdrożenia chmurowego
+## 13. Architektura i wdrożenie chmurowe
 
-Cała aplikacja może zostać później uruchomiona na platformie obsługującej Python i zmienne środowiskowe. Publiczny DemoShop, Dashboard i API są udostępniane przez jedną aplikację FastAPI oraz jeden origin. Frontend korzysta ze względnego `/api/events`, więc nie wymaga osobnej konfiguracji adresu API. Sekrety, HTTPS i ewentualne dodatkowe originy CORS nadal będą wymagały konfiguracji właściwej dla wybranego środowiska.
+System został wdrożony jako jeden Web Service Python na Render. Publiczny DemoShop, Dashboard i API są udostępniane przez jedną aplikację FastAPI i jeden origin HTTPS. Frontend korzysta ze względnego `/api/events`, dlatego nie wymaga osobnego adresu API ani dodatkowego serwera statycznego. Neon PostgreSQL działa jako zewnętrzna usługa bazy danych.
 
-Repozytorium nie zawiera obecnie Dockerfile, Terraform ani konfiguracji konkretnej platformy. Projekt nie został jeszcze opisany jako wdrożony produkcyjnie.
+Render pobiera kod z GitHub, instaluje zależności poleceniem `pip install -r requirements.txt` i uruchamia aplikację poleceniem:
+
+```text
+uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'
+```
+
+Port pochodzi ze środowiska Render. Jeden worker zachowuje spójne działanie limiterów pamięciowych, a opcje proxy pozwalają aplikacji uwzględnić pierwotny protokół HTTPS i adres klienta przekazane przez zaufaną warstwę Render.
+
+Konfiguracja wykorzystuje nazwy `DATABASE_URL`, `OWNER_USERNAME`, `OWNER_PASSWORD_HASH`, `OWNER_SESSION_SECRET`, `AUTH_COOKIE_SECURE` i `PYTHON_VERSION`. Dla HTTPS `AUTH_COOKIE_SECURE=true`. Wartości bazy, hasha i sekretu sesji pozostają poza Git. Projekt był lokalnie uruchamiany z Pythonem 3.13.1; dokładna wersja skonfigurowana w działającym Web Service wymaga potwierdzenia w panelu Render.
+
+Publiczne `POST /api/events` jest oddzielone od chronionych `/api/analytics/*`. Dokumenty Dashboardu są publicznym szkieletem, ale dane analityczne wymagają ważnej sesji właściciela. Architektura nie wykorzystuje Dockera, Kubernetesa, mikroserwisów ani osobnego procesu frontendowego.
+
+### 13.1. Ręczna weryfikacja wdrożenia
+
+Po wdrożeniu użytkowniczka potwierdziła ręcznie:
+
+1. działanie `/api/health`;
+2. dostępność publicznej strony głównej DemoShop;
+3. działanie stron produktów i koszyka;
+4. logowanie właściciela pod `/dashboard/login`;
+5. działanie wszystkich pięciu sekcji Dashboardu;
+6. pojawianie się nowych zdarzeń DemoShop w sekcji Zdarzenia.
+
+Są to testy funkcjonalne rzeczywistej aplikacji chmurowej. Nie stanowią testów wydajnościowych, obciążeniowych, penetracyjnych ani gwarancji dostępności. Testy automatyczne opisane wcześniej są wykonywane lokalnie z atrapami i bez zapisywania rekordów testowych do Neon.
+
+### 13.2. Ograniczenia bezpłatnej infrastruktury
+
+Bezpłatny Web Service Render może zostać uśpiony po okresie bezczynności, co powoduje opóźnienie pierwszego żądania podczas ponownego uruchamiania. Obowiązują limity bezpłatnych planów Render i Neon. Restart procesu usuwa stan pamięciowych limiterów. Wdrożenie demonstracyjne nie ma gwarancji nieprzerwanej dostępności 24/7; ograniczenia te są świadomie zaakceptowane w zakresie projektu dyplomowego.

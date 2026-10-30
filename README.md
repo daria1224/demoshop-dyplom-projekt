@@ -44,6 +44,9 @@ Frontend zapisuje zdarzenia również w konsoli przeglądarki, co ułatwia lokal
 - Argon2 (`argon2-cffi`) do weryfikacji hasła właściciela;
 - `itsdangerous` do podpisywania czasowych ciasteczek sesyjnych;
 - PostgreSQL w usłudze Neon;
+- Render Free jako hosting jednej aplikacji FastAPI;
+- GitHub jako repozytorium kodu i źródło wdrożenia;
+- HTTPS zapewniane przez platformę Render;
 - SQL i typ `JSONB` dla dodatkowych danych zdarzeń.
 
 ## Struktura projektu
@@ -143,6 +146,45 @@ Nie uruchamiaj osobnego serwera statycznego. Strony DemoShop korzystają ze wzgl
 - `/cart.html` — koszyk;
 - `/about.html` — o nas;
 - `/contact.html` — kontakt.
+
+## Wdrożenie w chmurze — Render i Neon PostgreSQL
+
+Ukończona aplikacja działa jako jeden Web Service Python na platformie Render. Ten sam proces FastAPI udostępnia publiczny DemoShop, chroniony Dashboard i API pod jednym originem HTTPS. Dane pozostają w zewnętrznej bazie Neon PostgreSQL, a Render pobiera kod z repozytorium GitHub.
+
+W ustawieniach usługi zastosowano polecenia:
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'
+```
+
+Polecenie budowania instaluje zależności z `requirements.txt`. Uvicorn importuje `backend.main:app`, nasłuchuje na wszystkich interfejsach i porcie przydzielonym przez Render, uruchamia jeden proces oraz uwzględnia nagłówki zaufanego reverse proxy. Nie używa opcji `--reload`, która jest przeznaczona do pracy lokalnej.
+
+W panelu Render skonfigurowano nazwy zmiennych środowiskowych:
+
+```text
+DATABASE_URL
+OWNER_USERNAME
+OWNER_PASSWORD_HASH
+OWNER_SESSION_SECRET
+AUTH_COOKIE_SECURE
+PYTHON_VERSION
+```
+
+Wartości sekretów nie należą do repozytorium. Dla środowiska HTTPS `AUTH_COOKIE_SECURE` ma wartość `true`. Projekt został sprawdzony lokalnie z Pythonem 3.13.1; dokładna wartość `PYTHON_VERSION` użyta w działającej usłudze powinna być odczytywana wyłącznie w panelu Render, bez kopiowania jej do kodu.
+
+Po wdrożeniu podstawowa kontrola obejmuje kolejno:
+
+1. odpowiedź `GET /api/health`;
+2. otwarcie publicznego DemoShop i jego podstron;
+3. sprawdzenie produktów i koszyka;
+4. logowanie pod `/dashboard/login`;
+5. przejście przez pięć sekcji Dashboardu;
+6. wykonanie działania w sklepie i potwierdzenie nowego wpisu w sekcji Zdarzenia.
+
+Uruchomienie lokalne różni się konfiguracją transportu: używa `python -m uvicorn backend.main:app --reload`, adresu `http://127.0.0.1:8000` i `AUTH_COOKIE_SECURE=false`. W Render aplikacja działa bez `--reload`, za reverse proxy i przez publiczny HTTPS.
+
+Bezpłatny Web Service może zostać uśpiony po okresie bezczynności, dlatego pierwsze żądanie po przerwie może trwać dłużej. Obowiązują również limity bezpłatnych planów Render i Neon. Pamięciowe limitery aplikacji są zerowane po restarcie procesu, a infrastruktura demonstracyjna nie zapewnia gwarancji dostępności 24/7. Są to świadomie zaakceptowane ograniczenia projektu dyplomowego.
 
 ## Endpointy API
 
@@ -264,8 +306,7 @@ Token nie zawiera imienia, adresu e-mail ani identyfikatora konta i sam nie wska
 Poniższe funkcjonalności nie są jeszcze zaimplementowane:
 
 - ewentualne dalsze wizualizacje sesji, jeśli backend zostanie rozszerzony o odpowiednie dane;
-- rozbudowane filtry według dat, stron, typów zdarzeń i produktów;
-- docelowa konfiguracja CORS i HTTPS dla adresów wdrożeniowych;
-- wdrożenie backendu i frontendu w środowisku chmurowym.
+- rozbudowane filtry według stron, typów zdarzeń i produktów;
+- dalszy monitoring błędów oraz przegląd zasad retencji danych.
 
-Projekt nie jest obecnie przedstawiany jako wdrożony produkcyjnie.
+Projekt jest wdrożoną aplikacją demonstracyjną, a nie usługą o gwarantowanej dostępności produkcyjnej.
